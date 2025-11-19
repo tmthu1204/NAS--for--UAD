@@ -27,37 +27,44 @@ class AdaptNASOptimizer:
 
         self.ce = nn.CrossEntropyLoss()
 
-    # đổi chữ ký, thêm yt_w=None
     def _compute_losses(self, xb, yb, xt, yt, p, yt_w=None):
         """
-        - Source: supervised CE (yb bắt buộc – trong UAD ta gán yb=0 cho normal)
-        - Target: nếu yt is None -> unsupervised:
-            * entropy minimization on p_t
-            * (tuỳ chọn) energy regularization nhẹ để tránh collapse
-        nếu có yt (pseudo) -> CE như cũ, có thể weighting bằng yt_w.
+        - Source luôn CE.
+        - Target:
+            + Nếu yt=None → unsupervised → entropy minimization
+                L_T = sum( w * entropy(logits_t) ) / sum(w)
+            + Nếu yt != None → supervised CE + optional weight
+        - Domain loss giữ nguyên.
         """
         sched = exp_grl if self.grl_sched == 'exp' else cosine_grl
         gamma_t = self.gamma * sched(p)
 
         xb, yb = xb.to(self.device), yb.to(self.device)
         xt = xt.to(self.device)
-        yt_w = yt_w.to(self.device) if yt_w is not None else None
+        if yt_w is not None:
+            yt_w = yt_w.to(self.device)
 
+        # ----- Forward -----
         logits_s, d_s = self.model(xb, lambda_gr=gamma_t)
         logits_t, d_t = self.model(xt, lambda_gr=gamma_t)
 
-        # --- source loss ---
+        # ----- Source CE -----
         loss_s = self.ce(logits_s, yb)
 
-        # --- target loss ---
-        if yt is None:
-            # Unsupervised: entropy minimization
+        # ----- Target branch -----
+        if yt is None or (yt < 0).any():
+            # UNSUPERVISED TARGET
             pt = torch.softmax(logits_t, dim=1).clamp_min(1e-8)
-            ent = -(pt * torch.log(pt)).sum(dim=1).mean()
-            # nhẹ nhàng thêm energy penalty (tăng độ tự tin nhưng tránh nổ)
-            energy = torch.logsumexp(logits_t, dim=1).mean()
-            loss_t = ent + 0.001 * energy
+            ent = -(pt * torch.log(pt)).sum(dim=1)   # entropy từng mẫu  [B]
+
+            if yt_w is not None:
+                # weight cho mẫu "likely normal"
+                w = yt_w.clamp_min(1e-4)
+                loss_t = (w * ent).sum() / (w.sum() + 1e-8)
+            else:
+                loss_t = ent.mean()
         else:
+            # SUPERVISED TARGET
             yt = yt.to(self.device)
             if yt_w is None:
                 loss_t = self.ce(logits_t, yt)
@@ -67,14 +74,16 @@ class AdaptNASOptimizer:
                 w = w / (w.mean().detach() + 1e-8)
                 loss_t = (w * ce_t).mean()
 
-        # --- domain discriminator ---
+        # ----- Domain loss -----
         dlab_s = torch.zeros(d_s.size(0), dtype=torch.long, device=self.device)
         dlab_t = torch.ones(d_t.size(0), dtype=torch.long, device=self.device)
         loss_d = self.ce(d_s, dlab_s) + self.ce(d_t, dlab_t)
 
-        # Eq.(17)
+        # ----- Combined lower-level objective -----
         loss_lower = self.alpha * (loss_s - loss_d) + (1 - self.alpha) * loss_t
+
         return loss_lower, loss_s, loss_t, loss_d
+
 
 
 

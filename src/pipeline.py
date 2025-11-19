@@ -314,20 +314,24 @@ class CandidateModel(torch.nn.Module):
 
 # ============== TS-TCC feature extractor ==============
 def extract_features(trainer, X, device, batch_size=256):
-    """
-    Trích đặc trưng từ encoder TS-TCC: average pooling theo TRỤC THỜI GIAN.
-    Đầu ra: [N, C] để huấn luyện bộ phân lớp (LR) ổn định hơn.
-    """
     trainer.model.eval()
     feats = []
-    dl = DataLoader(ArrayDataset(X), batch_size=batch_size)
+
+    dl = DataLoader(
+        ArrayDataset(X, return_label=False),
+        batch_size=batch_size,
+        shuffle=False
+    )
+
     with torch.no_grad():
         for xb in dl:
             xb = xb.permute(0, 2, 1).to(device)   # [B, C, T]
             _, z = trainer.model(xb)              # z: [B, C, T]
-            f = z.mean(dim=2)                     # ✅ GAP theo THỜI GIAN -> [B, C]
+            f = z.mean(dim=2)                     # GAP theo thời gian -> [B, C]
             feats.append(f.cpu().numpy())
+
     return np.concatenate(feats, axis=0)
+
 
 
 
@@ -608,201 +612,100 @@ def main():
         fixed_s_idx = None  # ✅ sẽ nhận từ lần build đầu và tái sử dụng về sau
 
 
+        from sklearn.ensemble import IsolationForest
+
         for iter_id in range(N_ITERS):
-            print(f"\n[ITER {iter_id+1}/{N_ITERS}] Pseudo-labeling & AdaptNAS search...")
+            print(f"\n[ITER {iter_id+1}/{N_ITERS}] Unsupervised weighting & AdaptNAS search...")
 
-            # --- extract features from pretrained TS-TCC ---
-            from sklearn.pipeline import Pipeline
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.svm import LinearSVC
-            from sklearn.ensemble import IsolationForest
-            from sklearn.calibration import CalibratedClassifierCV
-
-
+            # 1. Extract TS-TCC features
             Zs = extract_features(tstcc, Xs, device)
             Zt = extract_features(tstcc, Xt, device)
 
-            # ===== SEED POSITIVE BẰNG ISOLATION FOREST =====
-            if np.unique(Ys).size < 2:
-                # train IF trên normal Zs
-                iso = IsolationForest(
-                    n_estimators=200,
-                    contamination=0.1,   # 10% anomaly giả định
-                    random_state=42
-                )
-                iso.fit(Zs)
-                # score_samples: càng nhỏ càng bất thường → đổi dấu cho dễ hiểu
-                scores_t = -iso.score_samples(Zt)  # [Nt]
-
-                top_p = 0.10
-                k_pos = max(1, int(top_p * len(scores_t)))
-                pos_idx_seed = np.argsort(-scores_t)[:k_pos]
-
-                Z_seed = np.concatenate([Zs, Zt[pos_idx_seed]], axis=0)
-                y_seed = np.concatenate([
-                    np.zeros(len(Zs), dtype=int),
-                    np.ones(len(pos_idx_seed), dtype=int)
-                ], axis=0)
-            else:
-                Z_seed, y_seed = Zs, Ys
-
-            # ===== CLASSIFIER: STANDARD SCALER + LINEAR SVM (CALIBRATED) =====
-            base_svm = LinearSVC(
-                class_weight='balanced',
-                max_iter=5000
+            # 2. Train IsolationForest trên source (normal)
+            iso = IsolationForest(
+                n_estimators=200,
+                contamination=0.05,
+                random_state=42
             )
-            svm_calib = CalibratedClassifierCV(base_svm, cv=3)
+            iso.fit(Zs)
 
-            clf = Pipeline([
-                ("scaler", StandardScaler()),
-                ("svm", svm_calib)
-            ])
-            clf.fit(Z_seed, y_seed)
+            # 3. Scoring target: score_samples càng nhỏ càng bất thường → đảo dấu
+            raw = -iso.score_samples(Zt)
 
+            # 4. Normalize về [0,1]
+            s_min, s_max = raw.min(), raw.max()
+            scores = (raw - s_min) / (s_max - s_min + 1e-8)
 
-            # === phần còn lại giữ nguyên ===
-            # Chọn pseudo-balanced theo lớp
-            idx, yps, pseudo_confidences = pseudo_label_balanced(clf, Zt, top_p=0.2, n_classes=num_classes)
+            # 5. Weight: mẫu score thấp (likely normal) → weight cao
+            # Ví dụ: top 80% thấp nhất coi là normal-ish
+            thr = np.quantile(scores, 0.8)
+            mask = (scores <= thr).astype(np.float32)
 
-            # Siết điều kiện nhất quán giữa các view
-            idx, yps, pseudo_confidences = filter_by_consistency(
-                clf, tstcc, Xt, device, idx, thr=0.8, batch_size=256
-            )
-            # Nếu sau filter không còn mẫu nào, hạ tiêu chí và/hoặc chuyển sang unlabeled target
-            if idx.size == 0:
-                print("[WARN] No pseudo-labeled target samples after consistency filtering.")
-                # 1) Thử nới lỏng: bỏ consistency, lấy top-k theo confidence
-                probs_t = clf.predict_proba(extract_features(tstcc, Xt, device, 256))
-                conf_t = probs_t.max(axis=1)
-                k = max(1, int(0.05 * len(Xt)))  # lấy top 5% tối thiểu 1 mẫu
-                idx_top = conf_t.argsort()[::-1][:k]
-                yps_top = probs_t[idx_top].argmax(1)
+            # Scale weight = (1 - scores) để ưu tiên mẫu rất normal
+            w_ent = mask * (1.0 - scores)
 
-                if k > 0:
-                    idx, yps = idx_top, yps_top
-                    pseudo_confidences = conf_t  # giữ full để gán w nếu cần
-                    print(f"[INFO] Fallback to top-{k} confident target samples without consistency.")
-                else:
-                    # 2) Cuối cùng: dùng toàn bộ Xt ở chế độ unlabeled (entropy minimization)
-                    print("[INFO] Fallback to unlabeled target training (entropy minimization).")
-                    ds_target = ArrayDataset(Xt)  # chỉ (x) -> trainer sẽ dùng entropy ở nhánh yt is None
+            print(f"[INFO] Entropy weights: using {mask.sum()} / {len(mask)} target samples.")
 
-            w_pseudo = pseudo_confidences
+            # 6. Dataset
+            ds_source = ArrayDataset(Xs, Ys)               # supervised
+            ds_target = ArrayDataset(Xt, None, w=w_ent)    # unlabeled + weight
 
+            # Validation uses YE T (ground truth)
+            ds_target_val = ArrayDataset(Xt, Yt)
 
-
-            # (khuyến nghị) lưu cả weights
-            np.save(f'outputs/pseudo_idx_iter{iter_id+1}.npy', idx)
-            np.save(f'outputs/pseudo_y_iter{iter_id+1}.npy', yps)
-            np.save(f'outputs/pseudo_conf_iter{iter_id+1}.npy', pseudo_confidences)
-
-            ds_source = ArrayDataset(Xs, Ys)
-            ds_target = ArrayDataset(Xt[idx], yps, w=w_pseudo)   # ✅ đúng
             if iter_id == 0:
-                # lần đầu: fixed_s_idx=None -> hàm trả về s_idx để lưu
                 val_loader, fixed_s_idx, val_src, val_tgt, beta_eff = build_validation(
-                    ds_source, ds_target, bs=args.batch_size, seed=42, fixed_s_idx=None
-                )
+                    ds_source, ds_target_val, bs=args.batch_size, seed=42, fixed_s_idx=None)
             else:
-                # các vòng sau: tái dùng s_idx đã cố định từ vòng 1
                 val_loader, _, val_src, val_tgt, beta_eff = build_validation(
-                    ds_source, ds_target, bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
-                )
+                    ds_source, ds_target_val, bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx)
 
-
-            # --- Search phase: multiple random candidate architectures ---
-            best_val_acc = -float("inf")   # ✅ KHỞI TẠO Ở ĐÂY (trước vòng for)
-            best_cand = None
+            # 7. Architecture search (giữ nguyên)
+            best_val_acc = -1
             best_arch = None
+            best_cand = None
 
             for i in range(args.search_candidates):
                 arch_c = sample_arch()
                 cand = CandidateModel(in_ch, arch_c, num_classes).to(device)
 
-                alpha_iter = 0.3 + 0.2 * iter_id   # 0.3 -> 0.5 -> 0.7
+                alpha_iter = 0.3 + 0.2 * iter_id
 
-                # lower-level: nhiều bước hơn, lr_inner lớn hơn (tinh thần batch 512, lr 0.25)
                 train_bilevel(
                     cand, ds_source, ds_target, val_loader,
                     device=device,
-                    steps=80,              # thay vì 150
-                    bs=args.batch_size,    # nhưng ta sẽ chạy bs 128 thôi
+                    steps=80,
+                    bs=args.batch_size,
                     alpha=alpha_iter,
                     gamma=1.0,
-                    lr_inner=1e-3,         # quay về 1e-3
+                    lr_inner=1e-3,
                     lr_arch=1e-3,
                     use_cosine_decay=True,
                     early_stop=False
                 )
 
-
                 from src.adaptnas.optimizer import AdaptNASOptimizer
-                opt = AdaptNASOptimizer(
-                    cand,
-                    alpha=0.5,
-                    gamma=1.0,
-                    lr_inner=1e-2,                # match với train_bilevel
-                    lr_arch=3e-3,
-                    device=device
-                )
-                stats = opt.step_upper_combined(val_src, val_tgt, alpha=alpha_iter)
-                val_acc   = 1.0 - stats["hybrid_err"]
-                acc_quick = quick_validate(cand, val_loader, device)
+                opt = AdaptNASOptimizer(cand, alpha=0.5, gamma=1.0,
+                                        lr_inner=1e-2, lr_arch=3e-3,
+                                        device=device)
 
-                history.append({
-                    'iter': iter_id + 1,
-                    'arch': str(arch_c),
-                    'acc_quick': acc_quick,
-                    'val_acc':   val_acc,
-                    'src_err':   stats["src_err"],
-                    'tgt_err':   stats["tgt_err"],
-                    'hybrid_err':stats["hybrid_err"],
-                    'alpha':     alpha_iter,
-                    'beta':      beta_eff
-                })
-                print(f"  Candidate {i+1}/{args.search_candidates}: "
-                    f"val_acc={val_acc:.4f} | src_err={stats['src_err']:.4f} | tgt_err={stats['tgt_err']:.4f}")
+                stats = opt.step_upper_combined(val_src, val_tgt, alpha=alpha_iter)
+                val_acc = 1.0 - stats["hybrid_err"]
 
                 if val_acc > best_val_acc:
                     best_val_acc = val_acc
                     best_arch = arch_c
                     best_cand = cand
 
+            print(f"[ITER {iter_id+1}] Best arch = {best_arch}")
 
-                stats = opt.step_upper_combined(val_src, val_tgt, alpha=alpha_iter)
-                val_acc   = 1.0 - stats["hybrid_err"]
-                acc_quick = quick_validate(cand, val_loader, device)
-
-                history.append({
-                    'iter': iter_id + 1,
-                    'arch': str(arch_c),
-                    'acc_quick': acc_quick,
-                    'val_acc':   val_acc,
-                    'src_err':   stats["src_err"],
-                    'tgt_err':   stats["tgt_err"],
-                    'hybrid_err':stats["hybrid_err"],
-                    'alpha':     alpha_iter,
-                    'beta':      beta_eff
-                })
-                print(f"  Candidate {i+1}/{args.search_candidates}: "
-                    f"val_acc={val_acc:.4f} | src_err={stats['src_err']:.4f} | tgt_err={stats['tgt_err']:.4f}")
-
-
-                # ✅ chọn theo val_acc cao nhất
-                if val_acc > best_val_acc:
-                    best_val_acc = val_acc
-                    best_arch = arch_c
-                    best_cand = cand
-
-
-            print(f"[ITER {iter_id+1}] ✅ Best arch = {best_arch}")
 
             # === After AdaptNAS search finishes ===
             print(f"[INFO] Selected architecture (A*) summary after iteration {iter_id+1}:")
             print(best_cand)  # ✅ dùng best_cand, không phải cand
         pass
 
-        # Nếu cand có arch_params
+        # Nếu cand có arch_params: in ra phân bố kiến trúc (debug / interpret)
         if hasattr(best_cand, "arch_params"):
             with torch.no_grad():
                 probs = torch.softmax(best_cand.arch_params, dim=0)
@@ -810,16 +713,11 @@ def main():
                 for i, p in enumerate(probs):
                     print(f"  Op {i}: {p.item():.4f}")
 
-        # === Evaluate pseudo-labels quality ===
-        print(f"[INFO] Pseudo-labels generated: {len(yps)} samples")
-        conf_mean = np.mean(pseudo_confidences)
-        print(f"[INFO] Average pseudo-label confidence: {conf_mean:.4f}")
+        # (Optional) Thống kê weight anomaly (nếu đang dùng w_ent trong vòng lặp)
+        if 'w_ent' in locals():
+            print(f"[INFO] Target weight stats: mean={w_ent.mean():.4f}, "
+                  f"min={w_ent.min():.4f}, max={w_ent.max():.4f}")
 
-        # Nếu có ground truth của source validation
-        if "Ys_val" in locals() and "classifier" in locals():
-            from sklearn.metrics import accuracy_score
-            pseudo_acc = accuracy_score(Ys_val, classifier.predict(Zs_val))
-            print(f"[INFO] Estimated pseudo-label accuracy on source validation: {pseudo_acc*100:.2f}%")
 
     # === Final training on best architecture ===
     print("[INFO] Final training with best architecture...")
@@ -827,8 +725,7 @@ def main():
     if args.uad:
         final_model = CandidateModel(in_ch, best_arch, num_classes).to(device)
         ds_source = ArrayDataset(Xs, Ys)
-        Xt_pseudo = Xt[idx]
-        ds_target = ArrayDataset(Xt_pseudo, yps)
+        ds_target = ArrayDataset(Xt, None, w=w_ent)
         val_loader, _, _, _, _ = build_validation(
             ds_source, ds_target, bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
         )
@@ -882,21 +779,27 @@ def main():
         print("[INFO] Final training with best architecture...")
 
         final_model = CandidateModel(in_ch, best_arch, num_classes).to(device)
-        ds_source = ArrayDataset(Xs, Ys)
-        Xt_pseudo = Xt[idx]
-        ds_target = ArrayDataset(Xt_pseudo, yps)
 
-        # build_validation trả về 5 giá trị
+        # Source: labeled
+        ds_source = ArrayDataset(Xs, Ys)
+
+        # Target: unlabeled (entropy + domain loss)
+        ds_target = ArrayDataset(Xt)   # y=None
+
+        # Validation on target with true labels
+        ds_target_val = ArrayDataset(Xt, Yt)
         val_loader, _, _, _, _ = build_validation(
-            ds_source, ds_target, bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
+            ds_source, ds_target_val,
+            bs=args.batch_size, seed=42,
+            fixed_s_idx=fixed_s_idx
         )
 
+        alpha_final = 0.3 + 0.2 * (N_ITERS - 1)
 
-        alpha_final = 0.3 + 0.2 * (N_ITERS - 1)  # ví dụ N_ITERS=3 -> 0.7
         train_log = train_bilevel(
             final_model, ds_source, ds_target, val_loader,
             device=device,
-            steps=200,             # đủ dài nhưng không quá
+            steps=200,
             bs=args.batch_size,
             alpha=alpha_final,
             gamma=1.0,
@@ -908,40 +811,36 @@ def main():
             ckpt_path="outputs/checkpoints/final_best.pt"
         )
 
-
-
-
-
-
-
-
-        # === Evaluation on target ===c
+        # ===== Evaluation on target =====
         metrics, roc_data = None, None
         if Yt is not None:
             final_model.eval()
             all_probs = []
-            dl_full = DataLoader(ArrayDataset(Xt), batch_size=256)
+            dl_full = DataLoader(ArrayDataset(Xt, return_label=False), batch_size=256)
+
             with torch.no_grad():
                 for xb in dl_full:
                     xb = xb.to(device)
                     logits, _ = final_model(xb)
                     all_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
+
             probs = np.concatenate(all_probs, axis=0)
             y_pred = probs.argmax(axis=1)
 
             from sklearn.metrics import precision_recall_fscore_support, roc_auc_score, roc_curve
             from sklearn.preprocessing import label_binarize
+
             prec, rec, f1, _ = precision_recall_fscore_support(
                 Yt, y_pred, average='macro', zero_division=0
             )
 
-            # ====== MULTI-CLASS ROC/AUC (chỉ dùng khi >2 lớp) ======
             if probs.shape[1] > 2:
                 Yt_bin = label_binarize(Yt, classes=np.arange(probs.shape[1]))
                 try:
                     auc_score = roc_auc_score(Yt_bin, probs, average='macro', multi_class='ovr')
                 except ValueError:
                     auc_score = 0.5
+
                 metrics = {'precision': prec, 'recall': rec, 'f1': f1, 'auc': auc_score}
 
                 fpr, tpr = {}, {}
@@ -952,10 +851,8 @@ def main():
                     'tpr': {i: tpr[i].tolist() for i in tpr}
                 }
             else:
-                # Binary case (SMD / UAD): AUC & ROC sẽ được tính ở block UAD metrics phía dưới
                 metrics = {'precision': prec, 'recall': rec, 'f1': f1}
                 roc_data = None
-
         pass
 
     
