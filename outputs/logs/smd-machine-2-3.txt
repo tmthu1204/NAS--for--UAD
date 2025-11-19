@@ -1,0 +1,254 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\StudySpace\Tài liệu\KLTN\Pipeline\src\pipeline.py", line 818, in <module>
+    main()
+  File "D:\StudySpace\Tài liệu\KLTN\Pipeline\src\pipeline.py", line 698, in main
+    val_loader, _ = build_validation(ds_source, ds_target, bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx)
+    ^^^^^^^^^^^^^
+ValueError: too many values to unpack (expected 2)
+Unique labels (source): [0]
+Unique labels (target): [0 1]
+[INFO] Normalizing window size to 128...
+[INFO] Detected num_classes = 2 (in_ch=38)
+[INFO] TS-TCC pretraining ...
+>>> Training TS-TCC ...
+[Epoch 1] Train Loss=11.3221, Train Acc=0.0000
+[Epoch 2] Train Loss=9.9451, Train Acc=0.0000
+[Epoch 3] Train Loss=8.9215, Train Acc=0.0000
+[Epoch 4] Train Loss=8.3613, Train Acc=0.0000
+[Epoch 5] Train Loss=7.8249, Train Acc=0.0000
+>>> TS-TCC training finished.
+
+
+[ITER 1/3] Pseudo-labeling & AdaptNAS search...
+[BiLevel] step 20/50 | train_loss=-0.2238 | val_acc=0.9902
+[BiLevel] step 40/50 | train_loss=-0.2309 | val_acc=1.0000
+[BiLevel] step 50/50 | train_loss=-0.2275 | val_acc=1.0000
+  Candidate 1/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.5252 | val_acc=0.6471
+[BiLevel] step 40/50 | train_loss=-0.3953 | val_acc=0.6471
+[BiLevel] step 50/50 | train_loss=-0.3854 | val_acc=0.6471
+  Candidate 2/5: val_acc=0.7000 | src_err=1.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.0750 | val_acc=0.6078
+[BiLevel] step 40/50 | train_loss=-0.1791 | val_acc=0.6471
+[BiLevel] step 50/50 | train_loss=-0.2027 | val_acc=0.6471
+  Candidate 3/5: val_acc=0.7000 | src_err=1.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.3049 | val_acc=0.6275
+[BiLevel] step 40/50 | train_loss=-0.3253 | val_acc=0.6471
+[BiLevel] step 50/50 | train_loss=-0.3158 | val_acc=0.6471
+  Candidate 4/5: val_acc=0.3000 | src_err=0.0000 | tgt_err=1.0000
+[BiLevel] step 20/50 | train_loss=-0.1498 | val_acc=1.0000
+[BiLevel] step 40/50 | train_loss=-0.2020 | val_acc=1.0000
+[BiLevel] step 50/50 | train_loss=-0.2068 | val_acc=1.0000
+  Candidate 5/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[ITER 1] ✅ Best arch = ArchConfig(enc_filters=[32, 64, 64], enc_kernels=[5, 3, 3], enc_strides=[2, 2, 1], enc_pool=('avg', 2), enc_activation='lrelu', ar_layers=1, ar_heads=4, ar_hidden=128, clf_layers=2, clf_units=32, d_model=128)
+[INFO] Selected architecture (A*) summary after iteration 1:
+CandidateModel(
+  (encoder): EncoderCNN(
+    (net): Sequential(
+      (0): Conv1d(38, 32, kernel_size=(5,), stride=(2,), padding=(2,))
+      (1): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (2): ReLU()
+      (3): AvgPool1d(kernel_size=(2,), stride=(2,), padding=(0,))
+      (4): Conv1d(32, 64, kernel_size=(3,), stride=(2,), padding=(1,))
+      (5): BatchNorm1d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (6): ReLU()
+      (7): AvgPool1d(kernel_size=(2,), stride=(2,), padding=(0,))
+      (8): Conv1d(64, 64, kernel_size=(3,), stride=(1,), padding=(1,))
+      (9): BatchNorm1d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (10): ReLU()
+      (11): AvgPool1d(kernel_size=(2,), stride=(2,), padding=(0,))
+    )
+  )
+  (to_d): Conv1d(64, 128, kernel_size=(1,), stride=(1,))
+  (ar): ARTransformer(
+    (enc): TransformerEncoder(
+      (layers): ModuleList(
+        (0): TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=128, out_features=128, bias=True)
+          )
+          (linear1): Linear(in_features=128, out_features=128, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=128, out_features=128, bias=True)
+          (norm1): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+    (pos): PositionalEncoding()
+  )
+  (classifier): MLP(
+    (net): Sequential(
+      (0): Linear(in_features=128, out_features=32, bias=True)
+      (1): ReLU()
+      (2): Linear(in_features=32, out_features=2, bias=True)
+    )
+  )
+  (discriminator): DomainDiscriminator(
+    (net): Sequential(
+      (0): Linear(in_features=128, out_features=128, bias=True)
+      (1): ReLU()
+      (2): Linear(in_features=128, out_features=2, bias=True)
+    )
+  )
+)
+
+[ITER 2/3] Pseudo-labeling & AdaptNAS search...
+[BiLevel] step 20/50 | train_loss=-0.6863 | val_acc=1.0000
+[BiLevel] step 40/50 | train_loss=-0.4629 | val_acc=1.0000
+[BiLevel] step 50/50 | train_loss=-0.4566 | val_acc=1.0000
+  Candidate 1/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.4030 | val_acc=0.6471
+[BiLevel] step 40/50 | train_loss=-0.4848 | val_acc=0.6471
+[BiLevel] step 50/50 | train_loss=-0.5121 | val_acc=0.6471
+  Candidate 2/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.3978 | val_acc=1.0000
+[BiLevel] step 40/50 | train_loss=-0.3518 | val_acc=1.0000
+[BiLevel] step 50/50 | train_loss=-0.3389 | val_acc=1.0000
+  Candidate 3/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.5897 | val_acc=0.6471
+[BiLevel] step 40/50 | train_loss=-0.4301 | val_acc=0.6471
+[BiLevel] step 50/50 | train_loss=-0.4084 | val_acc=0.6471
+  Candidate 4/5: val_acc=0.5000 | src_err=1.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.5156 | val_acc=0.6471
+[BiLevel] step 40/50 | train_loss=-0.5335 | val_acc=0.6471
+[BiLevel] step 50/50 | train_loss=-0.5019 | val_acc=0.6471
+  Candidate 5/5: val_acc=0.5000 | src_err=1.0000 | tgt_err=0.0000
+[ITER 2] ✅ Best arch = ArchConfig(enc_filters=[64, 32], enc_kernels=[3, 3], enc_strides=[2, 2], enc_pool=('avg', 2), enc_activation='relu', ar_layers=1, ar_heads=4, ar_hidden=128, clf_layers=1, clf_units=32, d_model=128)
+[INFO] Selected architecture (A*) summary after iteration 2:
+CandidateModel(
+  (encoder): EncoderCNN(
+    (net): Sequential(
+      (0): Conv1d(38, 64, kernel_size=(3,), stride=(2,), padding=(1,))
+      (1): BatchNorm1d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (2): ReLU()
+      (3): AvgPool1d(kernel_size=(2,), stride=(2,), padding=(0,))
+      (4): Conv1d(64, 32, kernel_size=(3,), stride=(2,), padding=(1,))
+      (5): BatchNorm1d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (6): ReLU()
+      (7): AvgPool1d(kernel_size=(2,), stride=(2,), padding=(0,))
+    )
+  )
+  (to_d): Conv1d(32, 128, kernel_size=(1,), stride=(1,))
+  (ar): ARTransformer(
+    (enc): TransformerEncoder(
+      (layers): ModuleList(
+        (0): TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=128, out_features=128, bias=True)
+          )
+          (linear1): Linear(in_features=128, out_features=128, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=128, out_features=128, bias=True)
+          (norm1): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+    (pos): PositionalEncoding()
+  )
+  (classifier): MLP(
+    (net): Sequential(
+      (0): Linear(in_features=128, out_features=2, bias=True)
+    )
+  )
+  (discriminator): DomainDiscriminator(
+    (net): Sequential(
+      (0): Linear(in_features=128, out_features=128, bias=True)
+      (1): ReLU()
+      (2): Linear(in_features=128, out_features=2, bias=True)
+    )
+  )
+)
+
+[ITER 3/3] Pseudo-labeling & AdaptNAS search...
+[BiLevel] step 20/50 | train_loss=-0.3245 | val_acc=1.0000
+[BiLevel] step 40/50 | train_loss=-0.3120 | val_acc=1.0000
+[BiLevel] step 50/50 | train_loss=-0.3293 | val_acc=1.0000
+  Candidate 1/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.5978 | val_acc=0.6471
+[BiLevel] step 40/50 | train_loss=-0.5304 | val_acc=0.6471
+[BiLevel] step 50/50 | train_loss=-0.5085 | val_acc=0.6471
+  Candidate 2/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.8295 | val_acc=1.0000
+[BiLevel] step 40/50 | train_loss=-0.7011 | val_acc=1.0000
+[BiLevel] step 50/50 | train_loss=-0.6962 | val_acc=1.0000
+  Candidate 3/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.3754 | val_acc=1.0000
+[BiLevel] step 40/50 | train_loss=-0.4774 | val_acc=1.0000
+[BiLevel] step 50/50 | train_loss=-0.4780 | val_acc=1.0000
+  Candidate 4/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[BiLevel] step 20/50 | train_loss=-0.4929 | val_acc=1.0000
+[BiLevel] step 40/50 | train_loss=-0.5102 | val_acc=1.0000
+[BiLevel] step 50/50 | train_loss=-0.5231 | val_acc=1.0000
+  Candidate 5/5: val_acc=1.0000 | src_err=0.0000 | tgt_err=0.0000
+[ITER 3] ✅ Best arch = ArchConfig(enc_filters=[16, 64], enc_kernels=[5, 5], enc_strides=[2, 1], enc_pool=None, enc_activation='relu', ar_layers=3, ar_heads=4, ar_hidden=128, clf_layers=2, clf_units=32, d_model=64)
+[INFO] Selected architecture (A*) summary after iteration 3:
+CandidateModel(
+  (encoder): EncoderCNN(
+    (net): Sequential(
+      (0): Conv1d(38, 16, kernel_size=(5,), stride=(2,), padding=(2,))
+      (1): BatchNorm1d(16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (2): ReLU()
+      (3): Conv1d(16, 64, kernel_size=(5,), stride=(1,), padding=(2,))
+      (4): BatchNorm1d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (5): ReLU()
+    )
+  )
+  (to_d): Conv1d(64, 64, kernel_size=(1,), stride=(1,))
+  (ar): ARTransformer(
+    (enc): TransformerEncoder(
+      (layers): ModuleList(
+        (0-2): 3 x TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=64, out_features=64, bias=True)
+          )
+          (linear1): Linear(in_features=64, out_features=128, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=128, out_features=64, bias=True)
+          (norm1): LayerNorm((64,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((64,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+    (pos): PositionalEncoding()
+  )
+  (classifier): MLP(
+    (net): Sequential(
+      (0): Linear(in_features=64, out_features=32, bias=True)
+      (1): ReLU()
+      (2): Linear(in_features=32, out_features=2, bias=True)
+    )
+  )
+  (discriminator): DomainDiscriminator(
+    (net): Sequential(
+      (0): Linear(in_features=64, out_features=128, bias=True)
+      (1): ReLU()
+      (2): Linear(in_features=128, out_features=2, bias=True)
+    )
+  )
+)
+[INFO] Architecture operation probabilities:
+  Op 0: 0.0391
+  Op 1: 0.0410
+  Op 2: 0.2308
+  Op 3: 0.0246
+  Op 4: 0.0120
+  Op 5: 0.0690
+  Op 6: 0.1488
+  Op 7: 0.1034
+  Op 8: 0.0567
+  Op 9: 0.0203
+  Op 10: 0.2542
+[INFO] Pseudo-labels generated: 2 samples
+[INFO] Average pseudo-label confidence: 0.9999
+[INFO] Final training with best architecture...
+[INFO] Final training with best architecture...
