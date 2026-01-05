@@ -4,42 +4,25 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-
-
-
 class ArrayDataset(Dataset):
-    def __init__(
-        self,
-        X: np.ndarray,
-        y: Optional[np.ndarray] = None,
-        w: Optional[np.ndarray] = None,
-        return_label: bool = True
-    ):
+    def __init__(self, X: np.ndarray, y: Optional[np.ndarray] = None, w: Optional[np.ndarray] = None):
         self.X = torch.tensor(X, dtype=torch.float32)
         self.y = None if y is None else torch.tensor(y, dtype=torch.long)
         self.w = None if w is None else torch.tensor(w, dtype=torch.float32)
-        self.return_label = return_label
 
     def __len__(self):
         return len(self.X)
 
     def __getitem__(self, idx):
         x = self.X[idx]
-
-        # Dùng cho extract_features, các loader chỉ cần X
-        if not self.return_label:
+        if self.y is None and self.w is None:
             return x
-
-        # Unlabeled dataset (y=None): chỉ trả về X (giống behavior cũ)
-        if self.y is None:
-            return x
-
-        # Labeled, không weight
-        if self.w is None:
+        if self.y is None and self.w is not None:
+            return x, self.w[idx]          # ✅ unlabeled + weight
+        if self.y is not None and self.w is None:
             return x, self.y[idx]
-
-        # Labeled + weight (ví dụ pseudo-label)
         return x, self.y[idx], self.w[idx]
+
 
 
 

@@ -22,6 +22,7 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
                   use_cosine_decay=True, early_stop=True, patience=5, ckpt_path=None):
 
     model.to(device)
+    model.train()
     os.makedirs(log_dir, exist_ok=True)
     opt = AdaptNASOptimizer(model, alpha, gamma, lr_inner, lr_arch, grl_sched, device)
 
@@ -61,9 +62,9 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
 
     def _entropy_minimization_loss(logits, w=None):
         p = torch.softmax(logits, dim=1).clamp_min(1e-8)
-        ent = -(p * torch.log(p)).sum(dim=1)
+        ent = -(p * torch.log(p)).sum(dim=1)  # [B]
         if w is not None:
-            w = w.to(logits.device)
+            w = w.to(logits.device).float().clamp_min(0.0)
             w = w / (w.mean().detach() + 1e-8)
             return (w * ent).mean()
         return ent.mean()
@@ -80,23 +81,32 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
                 break
 
         xt, yt, yt_w = None, None, None
+
         if isinstance(xtb, (list, tuple)):
             if len(xtb) == 1:
                 xt = xtb[0]
             elif len(xtb) == 2:
-                xt, yt = xtb
+                # ✅ (x,y) hoặc (x,w)
+                xt = xtb[0]
+                second = xtb[1]
+                if isinstance(second, torch.Tensor) and second.dtype in (torch.long, torch.int64, torch.int32):
+                    yt = second
+                else:
+                    yt = None
+                    yt_w = second
             elif len(xtb) == 3:
-                xt, yt, yt_w = xtb
+                xt, yt, yt_w = xtb[0], xtb[1], xtb[2]
             else:
                 raise ValueError(f"Unexpected target batch format, len={len(xtb)}")
+
         elif isinstance(xtb, dict):
             xt = xtb.get("x") or xtb.get("input") or list(xtb.values())[0]
             yt = xtb.get("y") or xtb.get("label") or None
+            yt_w = xtb.get("w") or xtb.get("weight") or None
         else:
             xt = xtb
 
-        # label -1 = unlabeled
-        has_t_label = yt is not None and (yt >= 0).any() if isinstance(yt, torch.Tensor) else (yt is not None)
+        has_t_label = (yt is not None)
 
         # -------- source batch --------
         try:
@@ -124,7 +134,7 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
             if yt_w is not None:
                 yt_w = yt_w.to(device)
 
-            gamma_t = gamma * (p if hasattr(p, "__float__") else 1.0)
+            gamma_t = gamma * float(p)
             logits_s, d_s = model(xb, lambda_gr=gamma_t)
             logits_t, d_t = model(xt, lambda_gr=gamma_t)
 
