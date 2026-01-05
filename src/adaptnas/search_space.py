@@ -1,40 +1,3 @@
-# from dataclasses import dataclass
-# from typing import List, Tuple
-# import random
-
-
-# @dataclass
-# class ArchConfig:
-#     enc_filters: List[int]
-#     enc_kernels: List[int]
-#     enc_strides: List[int]
-#     enc_pool: Tuple[str,int]
-#     enc_activation: str
-#     ar_layers: int
-#     ar_heads: int
-#     ar_hidden: int
-#     clf_layers: int
-#     clf_units: int
-#     d_model: int
-
-
-
-
-# def sample_arch():
-#     n = random.randint(1,3)
-#     filters = [random.choice([16,32,64]) for _ in range(n)]
-#     kernels = [random.choice([3,5]) for _ in range(n)]
-#     strides = [random.choice([1,2]) for _ in range(n)]
-#     pool = random.choice([('max',2),('avg',2), None])
-#     act = random.choice(['relu','lrelu'])
-#     ar_l = random.randint(1,3)
-#     ar_h = random.choice([2,4])
-#     ar_hidden = random.choice([64,128])
-#     clf_l = random.randint(1,2)
-#     clf_u = random.choice([32,64])
-#     d_model = random.choice([64,128])
-#     return ArchConfig(filters, kernels, strides, pool, act, ar_l, ar_h, ar_hidden, clf_l, clf_u, d_model)
-
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 import random
@@ -111,3 +74,128 @@ def sample_arch():
         seq_kernel, seq_dilation,
         clf_layers, clf_units, d_model
     )
+
+# ---- Base architectures (hand-designed) for paper baselines ----
+
+def get_base_arches():
+    """
+    Return a dict of fixed architectures for baselines.
+    All are valid ArchConfig in the same search space.
+    """
+    bases = {}
+
+    # 1) Small CNN + GRU (lightweight baseline)
+    bases["CNN_GRU_S"] = ArchConfig(
+        enc_filters=[32, 64],
+        enc_kernels=[5, 5],
+        enc_strides=[1, 2],
+        enc_dilations=[1, 1],
+        enc_pool=('max', 2),
+        enc_activation='relu',
+        seq_type="gru",
+        seq_layers=1,
+        seq_heads=1,
+        seq_hidden=64,
+        seq_kernel=3,
+        seq_dilation=1,
+        clf_layers=2,
+        clf_units=64,
+        d_model=64,
+    )
+
+    # 2) Medium CNN + GRU
+    bases["CNN_GRU_M"] = ArchConfig(
+        enc_filters=[32, 64, 64],
+        enc_kernels=[5, 5, 3],
+        enc_strides=[1, 2, 1],
+        enc_dilations=[1, 1, 1],
+        enc_pool=('max', 2),
+        enc_activation='relu',
+        seq_type="gru",
+        seq_layers=2,
+        seq_heads=1,
+        seq_hidden=128,
+        seq_kernel=3,
+        seq_dilation=1,
+        clf_layers=2,
+        clf_units=128,
+        d_model=128,
+    )
+
+    # 3) Small CNN + Transformer
+    bases["CNN_TRF_S"] = ArchConfig(
+        enc_filters=[32, 64],
+        enc_kernels=[5, 3],
+        enc_strides=[1, 2],
+        enc_dilations=[1, 1],
+        enc_pool=('avg', 2),
+        enc_activation='relu',
+        seq_type="transformer",
+        seq_layers=1,
+        seq_heads=2,
+        seq_hidden=64,
+        seq_kernel=3,
+        seq_dilation=1,
+        clf_layers=2,
+        clf_units=64,
+        d_model=64,
+    )
+
+    # 4) Medium CNN + Transformer
+    bases["CNN_TRF_M"] = ArchConfig(
+        enc_filters=[32, 64, 64],
+        enc_kernels=[7, 5, 3],
+        enc_strides=[1, 2, 1],
+        enc_dilations=[1, 1, 1],
+        enc_pool=('avg', 2),
+        enc_activation='relu',
+        seq_type="transformer",
+        seq_layers=2,
+        seq_heads=4,
+        seq_hidden=128,
+        seq_kernel=3,
+        seq_dilation=1,
+        clf_layers=2,
+        clf_units=128,
+        d_model=128,
+    )
+
+    # 5) Small CNN + TCN
+    bases["CNN_TCN_S"] = ArchConfig(
+        enc_filters=[32, 64],
+        enc_kernels=[5, 3],
+        enc_strides=[1, 2],
+        enc_dilations=[1, 1],
+        enc_pool=('max', 2),
+        enc_activation='relu',
+        seq_type="tcn",
+        seq_layers=2,
+        seq_heads=1,
+        seq_hidden=64,
+        seq_kernel=3,
+        seq_dilation=2,
+        clf_layers=2,
+        clf_units=64,
+        d_model=64,
+    )
+
+    # 6) Medium CNN + TCN (more capacity)
+    bases["CNN_TCN_M"] = ArchConfig(
+        enc_filters=[32, 64, 64],
+        enc_kernels=[7, 5, 3],
+        enc_strides=[1, 2, 1],
+        enc_dilations=[1, 1, 1],
+        enc_pool=('max', 2),
+        enc_activation='relu',
+        seq_type="tcn",
+        seq_layers=2,
+        seq_heads=1,
+        seq_hidden=128,
+        seq_kernel=5,
+        seq_dilation=4,
+        clf_layers=3,
+        clf_units=128,
+        d_model=128,
+    )
+
+    return bases
