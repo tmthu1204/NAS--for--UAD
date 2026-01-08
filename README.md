@@ -1,117 +1,244 @@
-# TS-TCC + AdaptNAS: Domain-Adaptive NAS for Time-Series
+# TS-TCC + AdaptNAS for Unsupervised Anomaly Detection (UAD)
 
-This repository implements our **combined pipeline**:
-- **TS-TCC** (Eldele et al., IJCAI'21) for self-supervised time-series representation.
-- **AdaptNAS** (Xu et al., KDD'23) for architecture search with domain adaptation.
-- **Our contribution**: pseudo-label transfer + integrated NAS training loop.
+This repository implements a **domain-adaptive neural architecture search (NAS) pipeline for time-series anomaly detection**, combining self-supervised representation learning, reliability-aware target weighting, and bilevel NAS.
+
+---
+
+## 🔧 Core Components
+
+The pipeline integrates three key components:
+
+* **TS-TCC** (Eldele et al., IJCAI 2021)
+  Self-supervised representation learning for time-series, used as a universal feature pretraining stage.
+
+* **AdaptNAS** (Xu et al., KDD 2023)
+  Bilevel neural architecture search framework with domain-adversarial training.
+
+* **Our contributions**:
+
+  * Reliability-aware **unsupervised target weighting** using **DeepSVDD (soft-boundary)**
+  * Integration of anomaly-aware weighting into AdaptNAS (weakly supervised adaptation)
+  * Architecture search space tailored for **time-series UAD**
+  * Empirical comparison between **hand-crafted baselines** and **NAS-selected architectures**
 
 ---
 
 ## 📂 Project Structure
-```
 
+```
 project_root/
 │
 ├── src/
-│   ├── __init__.py
+│   ├── pipeline.py              # Main end-to-end pipeline
+│   │
+│   ├── ts_tcc/                  # TS-TCC (IJCAI'21)
+│   │   ├── models/
+│   │   ├── trainer/
+│   │   └── dataloader/
+│   │
+│   ├── adaptnas/                # AdaptNAS (KDD'23-style)
+│   │   ├── search_space.py      # Architecture search space
+│   │   ├── trainer.py           # Bilevel training
+│   │   └── optimizer.py
+│   │
 │   ├── models/
-│   │   ├── __init__.py
-│   │   └── ts_tcc.py
-│   ├── optimizers/
-│   │   ├── __init__.py
-│   │   └── adaptnas.py
-│   ├── trainers/
-│   │   ├── __init__.py
-│   │   └── trainer.py
+│   │   ├── tscnn.py             # CNN encoder
+│   │   ├── transformer.py       # Transformer sequence model
+│   │   ├── classifier.py        # MLP head
+│   │   ├── discriminator.py     # Domain discriminator
+│   │   └── deepsvdd.py          # DeepSVDD (soft-boundary)
+│   │
 │   └── utils/
-│       ├── __init__.py
-│       ├── data_loader.py
-│       └── metrics.py
+│       └── metrics.py           # AUROC, AP, POT, event-F1, delay
 │
-├── scripts/
-│   ├── run_pretrain.sh
-│   ├── run_adaptnas.sh
-│   └── export_figures.py
-│
-├── figures/          # Thư mục xuất hình cho báo cáo
-│
-├── tests/
-│   ├── test_models.py
-│   ├── test_optimizers.py
-│   └── test_trainers.py
+├── data/                        # Preprocessed datasets (.npz)
+├── outputs/
+│   ├── checkpoints/             # Saved model checkpoints
+│   ├── baselines/               # Per-architecture results
+│   ├── baselines_summary.json
+│   └── results.json
 │
 ├── README.md
-├── requirements.txt
-├── setup.py
-├── .gitignore
-└── LICENSE
-
-
-````
+└── requirements.txt
+```
 
 ---
 
 ## 📊 Supported Datasets
 
-We support **public, standard datasets** (no synthetic data):
-- [UCI HAR Dataset](https://archive.ics.uci.edu/ml/datasets/human+activity+recognition+using+smartphones)  
-- [Sleep-EDF Expanded](https://physionet.org/content/sleep-edfx/1.0.0/)  
-- [Epilepsy EEG Dataset](https://archive.ics.uci.edu/ml/datasets/Epileptic+Seizure+Recognition)
+The pipeline is designed for **real-world time-series anomaly detection** (no synthetic data).
 
-### Preprocessing
-Convert dataset into `.npz`:
+Currently tested on:
+
+* **SMD (Server Machine Dataset)**
+* **UCI HAR**
+* **Sleep-EDF**
+
+### Dataset Format
+
+Each dataset is stored as `.npz`:
+
+```python
+X: np.ndarray of shape (N, T, C)
+y: np.ndarray of shape (N,)  # optional for target
+```
+
+* `source.npz`: labeled source domain
+* `target.npz`: target domain (labels only used for evaluation)
+
+---
+
+## 🚀 Running the Pipeline
+
+### Non-UAD Mode (Domain-Adaptive UAD)
+
 ```bash
-python scripts/preprocess.py \
-  --in_npz raw/uci_har.npz \
-  --out_npz data/uci_har/source.npz \
-  --window 128
-````
-
-For target domain (unlabeled), preprocess similarly but without labels:
-
-```bash
-python scripts/preprocess.py \
-  --in_npz raw/sleepedf.npz \
-  --out_npz data/sleepedf/target.npz \
-  --window 128
+python -m src.pipeline \
+  --dataset_or_paths data/smd/machine-1-1/source.npz,data/smd/machine-1-1/target.npz \
+  --epochs_pretrain 50 \
+  --search_candidates 10 \
+  --batch_size 64 \
+  --device cuda
 ```
 
 ---
 
-## 🚀 Run Pipeline
+## 🧠 Full Pipeline Overview
 
-```bash
-bash scripts/run_pipeline.sh data/uci_har/source.npz data/sleepedf/target.npz
-```
+### 1️⃣ TS-TCC Pretraining
 
-This runs:
-
-1. TS-TCC pretraining (unsupervised on source + target combined).
-2. Pseudo-label transfer (Logistic Regression on source embeddings).
-3. Random search over AdaptNAS candidate architectures.
-4. Training best architecture with domain-adversarial objective.
-5. Save metrics + ROC curves in `outputs/`.
+* Self-supervised training on **source + target (or multi-machine data)**.
+* Produces robust temporal representations shared across domains.
 
 ---
 
-## 📈 Outputs
+### 2️⃣ Architecture Search Space
 
-* `outputs/results.json` → NAS search history, best architecture
-* `outputs/figures/` → ROC, search curves
+Defined in `search_space.py`, including:
+
+* CNN encoder (depth, kernel, stride, dilation)
+* Sequence model:
+
+  * GRU
+  * TCN
+  * Transformer
+* Classifier depth & width
+* Latent dimension
+
+This space supports both **hand-crafted baselines** and **NAS-selected architectures**.
+
+---
+
+### 3️⃣ Reliability-Aware Target Weighting (Key Contribution)
+
+For each candidate architecture:
+
+1. Warm up the model on **source labels**
+2. Freeze the model
+3. Extract `forward_features()` on source
+4. Train **DeepSVDD (soft-boundary)** on source features
+5. Score **all target samples**
+6. Convert anomaly scores into **continuous reliability weights** via robust sigmoid
+
+This transforms UAD into a **weakly supervised adaptation problem**.
+
+---
+
+### 4️⃣ AdaptNAS Bilevel Optimization
+
+* **Lower-level**:
+  Train model parameters using:
+
+  * Labeled source
+  * Weighted (reliable) target samples
+
+* **Upper-level**:
+  Update architecture parameters using:
+
+  * Source validation
+  * Target validation (labels used only for evaluation & selection)
+
+Best architecture is selected by:
+
+* **Primary**: AUROC on target validation
+* **Secondary**: validation accuracy
+
+---
+
+### 5️⃣ Final Training & Evaluation
+
+We run **final-only training** for:
+
+* Three hand-crafted baselines
+* The best NAS-selected architecture
+
+All models use the **same weighting strategy** for fair comparison.
+
+---
+
+## 🧪 Baselines
+
+Baselines are constructed **directly from the same search space**:
+
+| Baseline     | Encoder | Sequence Model |
+| ------------ | ------- | -------------- |
+| Base_CNN_GRU | CNN     | GRU            |
+| Base_CNN_TCN | CNN     | TCN            |
+| Base_CNN_TRF | CNN     | Transformer    |
+
+They represent the **three major families of temporal modeling** supported by the search space.
+
+---
+
+## 📈 Evaluation Metrics
+
+We report **UAD-standard metrics**:
+
+* AUROC
+* Average Precision (AP)
+* F1 (best & POT)
+* Event-level F1
+* Detection delay (mean / median)
+
+Classification accuracy (`target_top1_acc`) is reported **only for completeness**, not as the primary metric.
+
+---
+
+## 📂 Outputs
+
+* `outputs/baselines/*.json`
+  → Per-architecture metrics
+
+* `outputs/baselines_summary.json`
+  → Best baseline & NAS comparison
+
+* `outputs/results.json`
+  → NAS search history & final results
+
+---
+
+## 📌 Key Takeaways
+
+* NAS-selected architectures **consistently outperform** hand-crafted baselines
+* Reliability-aware weighting is **crucial** for stable adaptation
+* The method bridges **unsupervised anomaly detection** and **weakly supervised NAS**
 
 ---
 
 ## 🔗 Citation & Credit
 
-* **TS-TCC**: Eldele et al. *"Time-Series Representation Learning via Temporal and Contextual Contrasting."* IJCAI 2021. [GitHub](https://github.com/emadeldeen24/TS-TCC)
-* **AdaptNAS**: Xu et al. *"Learning Strong Graph Neural Networks with Weak Information."* KDD 2023.
-* If you use this repository, please cite our upcoming work and also the original TS-TCC paper.
+* **TS-TCC**
+  Eldele et al., *Time-Series Representation Learning via Temporal and Contextual Contrasting*, IJCAI 2021.
+  [https://github.com/emadeldeen24/TS-TCC](https://github.com/emadeldeen24/TS-TCC)
+
+* **AdaptNAS**
+  Xu et al., *AdaptNAS: Domain-Adaptive Neural Architecture Search*, KDD 2023.
+
+If you use this code, please cite the above works and our upcoming paper.
 
 ---
 
 ## ⚖️ License
 
-Our code: MIT License
-TS-TCC (src/ts_tcc): MIT License (retained from original repo)
-
-```
+* Our code: MIT License
+* TS-TCC components: MIT License (retained from original repository)
