@@ -1,9 +1,26 @@
 """
-Top-level orchestrator: preprocessing, TS-TCC pretrain, (optional) pseudo-labeling,
-AdaptNAS search, final training.
-Current default (non --uad): TS-TCC features + DeepSVDD anomaly score -> unsupervised weighting
--> AdaptNAS bilevel search -> final training.
+Top-level orchestrator (UAD project):
+
+- TS-TCC pretrain
+- (Mode A) adaptnas_combined:
+    * input: train_normal.npz, val_mixed.npz[, test_mixed.npz]
+    * SVDD-weighting on TARGET (val_mixed) using SVDD fitted on SOURCE normal (train_normal)
+    * bilevel AdaptNAS search (kept as your current logic: warmup -> SVDD weights -> train_bilevel -> upper step)
+    * final-only baselines (Base_* + NAS_BestArch) with same weighting
+    * report UAD metrics on test_mixed if provided else on val_mixed
+
+- (Mode B) uad_source:
+    * input: train_normal.npz, val_mixed.npz[, test_mixed.npz]
+    * search: choose arch by SVDD objective on source normal only
+        - objective = mean(dist2) on held-out normal (dist2 on candidate forward_features)
+        - SVDD training uses soft-boundary with warmup epochs (same as combined style: dist2)
+    * final: fit SVDD on full train_normal, score val/test by dist2, report AUROC/AP/event-F1/POT
+
+Notes:
+- For UAD metrics we assume labels are binary {0,1}. If labels are multiclass, we binarize by y>0 -> 1.
+- In this UAD project we set num_classes=2 for CandidateModel.
 """
+
 import argparse
 import os
 import json
@@ -16,13 +33,12 @@ from torch.utils.data import DataLoader
 from src.data.datasets import ArrayDataset
 from src.ts_tcc.trainer.trainer import TSTrainer
 from src.adaptnas.search_space import sample_arch
-from src.adaptnas.trainer import train_bilevel, quick_validate
+from src.adaptnas.trainer import train_bilevel
 
 from src.models.tscnn import EncoderCNN
 from src.models.transformer import ARTransformer
 from src.models.classifier import MLP
 from src.models.discriminator import DomainDiscriminator
-
 from src.models.deepsvdd import DeepSVDD
 
 from src.utils.metrics import (
@@ -56,7 +72,7 @@ except Exception:
 def load_npz_if_exists(path):
     if not os.path.exists(path):
         raise FileNotFoundError(path)
-    data = np.load(path)
+    data = np.load(path, allow_pickle=True)
     if "X" not in data:
         raise ValueError(f"{path} missing key 'X'")
     X = data["X"]
@@ -64,19 +80,27 @@ def load_npz_if_exists(path):
     return X, y
 
 
+def binarize_y(y):
+    if y is None:
+        return None
+    y = np.asarray(y).astype(int)
+    return (y > 0).astype(int)
+
+
 def fix_length(X, window=128):
     X_fixed = []
     for x in X:
+        x = np.asarray(x)
         if x.ndim != 2:
-            x = np.array(x).reshape(-1, x.shape[-1])
+            x = x.reshape(-1, x.shape[-1])
         T, C = x.shape
         if T < window:
-            pad = np.zeros((window - T, C))
+            pad = np.zeros((window - T, C), dtype=x.dtype)
             x = np.concatenate([x, pad], axis=0)
         elif T > window:
             x = x[:window]
         X_fixed.append(x)
-    return np.stack(X_fixed)
+    return np.stack(X_fixed, axis=0)
 
 
 def load_all_smd_for_pretrain(root_dir="data/smd", window=128):
@@ -196,9 +220,7 @@ class CandidateModel(torch.nn.Module):
             in_c = arch.d_model
             for l in range(arch.seq_layers):
                 dilation = arch.seq_dilation ** l
-                blocks.append(
-                    TCNBlock(in_c, arch.d_model, kernel_size=arch.seq_kernel, dilation=dilation)
-                )
+                blocks.append(TCNBlock(in_c, arch.d_model, kernel_size=arch.seq_kernel, dilation=dilation))
                 in_c = arch.d_model
             self.sequence = nn.Sequential(*blocks)
         else:
@@ -216,12 +238,12 @@ class CandidateModel(torch.nn.Module):
         z = self.to_d(z)         # (B, d_model, T)
 
         if self.seq_type == "tcn":
-            h = self.sequence(z)         # (B, d_model, T)
-            f = h.mean(dim=2)            # (B, d_model)
+            h = self.sequence(z)     # (B, d_model, T)
+            f = h.mean(dim=2)        # (B, d_model)
         else:
-            z_seq = z.transpose(1, 2)    # (B, T, d_model)
+            z_seq = z.transpose(1, 2)  # (B, T, d_model)
             if self.seq_type == "transformer":
-                out = self.sequence(z_seq)   # (B, T, d_model)
+                out = self.sequence(z_seq)  # (B, T, d_model)
                 f = out.mean(dim=1)
             elif self.seq_type == "gru":
                 _, h_n = self.sequence(z_seq)
@@ -259,418 +281,21 @@ def extract_features(trainer, X, device, batch_size=256):
     """
     trainer.model.eval()
     feats = []
-
-    dl = DataLoader(
-        ArrayDataset(X),                 # ✅ bỏ return_label, chỉ truyền X
-        batch_size=batch_size,
-        shuffle=False
-    )
-
+    dl = DataLoader(ArrayDataset(X), batch_size=batch_size, shuffle=False)
     with torch.no_grad():
         for xb in dl:
-            # xb là Tensor [B, T, C] do ArrayDataset trả ra
             xb = xb.permute(0, 2, 1).to(device)   # [B, C, T]
             _, z = trainer.model(xb)              # z: [B, C, T]
             f = z.mean(dim=2)                     # [B, C]
             feats.append(f.cpu().numpy())
-
     return np.concatenate(feats, axis=0)
 
 
-def fit_deepsvdd_on_source(Zs_np, device, hidden_dim=128, rep_dim=64, nu=0.05,
-                           epochs=20, warmup_epochs=5, lr=1e-3, bs=512, seed=42):
-    """
-    Train DeepSVDD (soft-boundary) on source TS-TCC features (assumed normal-ish).
-    Warmup: first warmup_epochs optimize only dist2 mean (no R term) to stabilize.
-    """
-    torch.manual_seed(seed)
-    Zs = torch.tensor(Zs_np, dtype=torch.float32, device=device)
-
-    svdd = DeepSVDD(in_dim=Zs.shape[1], hidden_dim=hidden_dim, rep_dim=rep_dim).to(device)
-
-    svdd.init_center(Zs)
-    opt = torch.optim.Adam(svdd.parameters(), lr=lr)
-
-    n = Zs.shape[0]
-    for ep in range(epochs):
-        svdd.train()
-        perm = torch.randperm(n, device=device)
-        total_loss = 0.0
-        n_batches = 0
-
-        for i in range(0, n, bs):
-            idx = perm[i:i+bs]
-            zb = Zs[idx]
-
-            if ep < warmup_epochs:
-                dist2 = svdd(zb)           # [B]
-                loss = dist2.mean()
-            else:
-                loss, _, _ = svdd.loss_soft_boundary(zb, nu=nu)
-
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-
-            total_loss += float(loss.detach().cpu())
-            n_batches += 1
-
-        if (ep + 1) % max(1, epochs // 5) == 0 or ep == epochs - 1:
-            print(
-                f"[DeepSVDD] epoch {ep+1}/{epochs} | loss={total_loss/max(1,n_batches):.6f} "
-                f"| R={float(svdd.R.detach().cpu()):.6f} | nu={nu}"
-            )
-
-    svdd.eval()
-    return svdd
-
-from copy import deepcopy
-from typing import Dict, Any, List
-
-# ---- Base architectures for paper (fixed, reproducible) ----
-def get_base_arches(in_ch: int, num_classes: int):
-    # You already import ArchConfig in search_space.py; reuse same dataclass here.
-    # If ArchConfig isn't imported in pipeline.py, add:
-    # from src.adaptnas.search_space import ArchConfig
-    from src.adaptnas.search_space import ArchConfig
-
-    bases = []
-
-    # Base 1: CNN + GRU (light)
-    bases.append((
-        "Base_CNN_GRU",
-        ArchConfig(
-            enc_filters=[32, 64],
-            enc_kernels=[5, 3],
-            enc_strides=[1, 2],
-            enc_dilations=[1, 1],
-            enc_pool=("max", 2),
-            enc_activation="relu",
-            seq_type="gru",
-            seq_layers=1,
-            seq_heads=1,
-            seq_hidden=128,
-            seq_kernel=3,
-            seq_dilation=1,
-            clf_layers=2,
-            clf_units=64,
-            d_model=128,
-        )
-    ))
-
-    # Base 2: CNN + TCN
-    bases.append((
-        "Base_CNN_TCN",
-        ArchConfig(
-            enc_filters=[32, 64],
-            enc_kernels=[5, 3],
-            enc_strides=[1, 2],
-            enc_dilations=[1, 1],
-            enc_pool=("max", 2),
-            enc_activation="relu",
-            seq_type="tcn",
-            seq_layers=2,
-            seq_heads=1,
-            seq_hidden=128,
-            seq_kernel=5,
-            seq_dilation=2,
-            clf_layers=2,
-            clf_units=64,
-            d_model=128,
-        )
-    ))
-
-    # Base 3: CNN + Transformer (small)
-    bases.append((
-        "Base_CNN_TRF",
-        ArchConfig(
-            enc_filters=[32, 64],
-            enc_kernels=[5, 3],
-            enc_strides=[1, 2],
-            enc_dilations=[1, 1],
-            enc_pool=("max", 2),
-            enc_activation="relu",
-            seq_type="transformer",
-            seq_layers=1,
-            seq_heads=2,
-            seq_hidden=128,
-            seq_kernel=3,
-            seq_dilation=1,
-            clf_layers=2,
-            clf_units=64,
-            d_model=128,
-        )
-    ))
-
-    return bases
-
-
-def run_final_only_option2(
-    arch_name: str,
-    arch_cfg,
-    Xs, Ys, Xt, Yt,
-    fixed_s_idx,
-    args,
-    device,
-    in_ch,
-    num_classes,
-    N_ITERS,
-    out_dir="outputs",
-):
-    """
-    FINAL TRAINING ONLY for a given arch, using Option 2 weighting:
-      warmup on source -> freeze -> extract forward_features -> SVDD -> robust sigmoid weights -> train_bilevel final
-    Returns dict of metrics & logs.
-    """
-
-    # ---- hyperparams (match what you used in Option2 search) ----
-    svdd_epochs = 10
-    svdd_warmup_epochs = 2
-    svdd_nu = 0.05
-
-    tau = 1.0
-    w_min = 0.05
-
-    # IMPORTANT: do NOT subsample target for weighting (you already noticed it can hurt)
-    max_svdd_fit = 5000    # ok to subsample SOURCE for fitting
-    max_svdd_score = None  # DO NOT subsample target
-
-    # build model
-    model = CandidateModel(in_ch, arch_cfg, num_classes).to(device)
-
-    # datasets
-    ds_source = ArrayDataset(Xs, Ys)
-    ds_target_val = ArrayDataset(Xt, Yt)
-
-    # val loader must reuse fixed_s_idx from search stage for fairness
-    val_loader, _, _, _, _ = build_validation(
-        ds_source, ds_target_val,
-        bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
-    )
-
-    # ---- (A) Warmup on source so features are meaningful ----
-    warmup_candidate_on_source(
-        model, ds_source, device=device,
-        steps=80, bs=args.batch_size, lr=1e-3
-    )
-
-    # ---- (B) Freeze for feature extraction + SVDD ----
-    _set_requires_grad(model, False)
-
-    if max_svdd_fit is not None and len(Xs) > max_svdd_fit:
-        idx_fit = np.random.RandomState(42).choice(len(Xs), size=max_svdd_fit, replace=False)
-        Xs_fit = Xs[idx_fit]
-    else:
-        Xs_fit = Xs
-
-    Fs = extract_candidate_features(model, Xs_fit, device=device, batch_size=256)
-    Ft = extract_candidate_features(model, Xt, device=device, batch_size=256)  # full target
-
-    svdd = fit_deepsvdd_on_features(
-        Fs, device=device,
-        hidden_dim=128, rep_dim=64,
-        nu=svdd_nu,
-        epochs=svdd_epochs,
-        warmup_epochs=svdd_warmup_epochs,
-        lr=1e-3, bs=1024, seed=42
-    )
-
-    # ✅ score TOÀN BỘ Xt bằng streaming (không cần pre-extract Ft)
-    raw = score_candidate_svdd_stream(
-        model, svdd, Xt, device=device,
-        batch_size=256, mode="dist2"
-    )
-    w_ent = robust_sigmoid_weights(raw, tau=tau, w_min=w_min)
-
-
-    print(
-        f"[FINAL-ONLY][{arch_name}] weights: "
-        f"mean={w_ent.mean():.4f} min={w_ent.min():.4f} max={w_ent.max():.4f} | "
-        f"tau={tau} w_min={w_min} nu={svdd_nu}"
-    )
-
-    # ---- (C) Unfreeze for training ----
-    _set_requires_grad(model, True)
-
-    # IMPORTANT: ensure training mode before backward for GRU/LSTM cuDNN
-    model.train()
-
-    ds_target = ArrayDataset(Xt, None, w=w_ent)
-
-    alpha_final = 0.3 + 0.2 * (N_ITERS - 1)
-
-    train_log = train_bilevel(
-        model, ds_source, ds_target, val_loader,
-        device=device,
-        steps=200,
-        bs=args.batch_size,
-        alpha=alpha_final,
-        gamma=1.0,
-        lr_inner=1e-3,
-        lr_arch=1e-3,
-        use_cosine_decay=True,
-        early_stop=True,
-        patience=10,
-        ckpt_path=os.path.join("outputs", "checkpoints", f"{arch_name}_final_best.pt")
-    )
-
-    # ---- Eval (same as your common eval block, isolated here) ----
-    metrics_paper = {}
-    metrics_uad = None
-
-    if Xt is not None and Yt is not None:
-        model.eval()
-        all_probs = []
-        dl_eval = DataLoader(ArrayDataset(Xt), batch_size=256, shuffle=False)
-        with torch.no_grad():
-            for xb in dl_eval:
-                xb = xb.to(device)
-                logits, _ = model(xb)
-                all_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
-        probs = np.concatenate(all_probs, axis=0)
-        pred = probs.argmax(axis=1)
-
-        target_acc = float((pred == Yt).mean())
-        target_err = 100.0 * (1.0 - target_acc)
-        metrics_paper = {"target_top1_acc": target_acc, "target_error_percent": target_err}
-
-        if probs.shape[1] == 2:
-            scores = probs[:, 1]
-            ap, auroc = compute_ap_auroc(Yt, scores)
-
-            # POT threshold learned from source-normal (Xs)
-            train_probs = []
-            dl_train_norm = DataLoader(ArrayDataset(Xs), batch_size=256, shuffle=False)
-            with torch.no_grad():
-                for xb in dl_train_norm:
-                    xb = xb.to(device)
-                    logits, _ = model(xb)
-                    train_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
-            train_scores = np.concatenate(train_probs, axis=0)[:, 1]
-
-            thr_pot = pot_threshold(train_scores, q=1e-3, level=0.99)
-            p_pot, r_pot, f1_pot = f1_at_threshold(Yt, scores, thr_pot)
-
-            f1_best, p_best, r_best, thr_best = best_f1(Yt, scores)
-
-            y_pred_bin = (scores >= thr_pot).astype(int)
-            ev = event_f1_and_delay(Yt, y_pred_bin)
-
-            metrics_uad = {
-                "ap": float(ap),
-                "auroc": float(auroc),
-                "f1_pot": float(f1_pot),
-                "precision_pot": float(p_pot),
-                "recall_pot": float(r_pot),
-                "thr_pot": float(thr_pot),
-                "f1_best": float(f1_best),
-                "precision_best": float(p_best),
-                "recall_best": float(r_best),
-                "thr_best": float(thr_best),
-                "event_f1": float(ev["event_f1"]),
-                "event_precision": float(ev["event_precision"]),
-                "event_recall": float(ev["event_recall"]),
-                "delay_mean": float(ev["delay_mean"]),
-                "delay_median": float(ev["delay_median"]),
-            }
-
-    return {
-        "arch_name": arch_name,
-        "arch": str(arch_cfg),
-        "metrics_paper": metrics_paper,
-        "metrics_uad": metrics_uad,
-        "train_curves": train_log,
-        "weighting": {
-            "option": "option2_svdd_on_forward_features",
-            "tau": float(tau),
-            "w_min": float(w_min),
-            "svdd_nu": float(svdd_nu),
-            "svdd_epochs": int(svdd_epochs),
-            "svdd_warmup_epochs": int(svdd_warmup_epochs),
-        }
-    }
-
-
-
-
-@torch.no_grad()
-def deepsvdd_anomaly_score(svdd, Z_np, device, bs=2048, mode="dist2"):
-    """
-    mode:
-      - "dist2": use distance^2 to center (continuous score)  ✅ recommended for weighting
-      - "dist2_minus_R2": dist2 - R^2
-      - "slack": relu(dist2 - R^2)
-    Return np.ndarray [N], higher = more anomalous
-    """
-    Z = torch.tensor(Z_np, dtype=torch.float32, device=device)
-    scores = []
-    R2 = (svdd.R ** 2)
-
-    n = Z.shape[0]
-    for i in range(0, n, bs):
-        zb = Z[i:i+bs]
-        dist2 = svdd(zb)
-
-        if mode == "dist2":
-            sc = dist2
-        elif mode == "dist2_minus_R2":
-            sc = dist2 - R2
-        else:  # "slack"
-            sc = torch.relu(dist2 - R2)
-
-        scores.append(sc.detach().cpu().numpy())
-
-    return np.concatenate(scores, axis=0)
-
-def eval_auroc_on_loader(model, loader, device):
-    model.eval()
-    all_scores, all_y = [], []
-
-    with torch.no_grad():
-        for batch in loader:
-            if isinstance(batch, (list, tuple)):
-                xb, yb = batch[0], batch[1]
-            elif isinstance(batch, dict):
-                xb = batch.get("x") or batch.get("input") or list(batch.values())[0]
-                yb = batch.get("y") or batch.get("label") or list(batch.values())[1]
-            else:
-                xb, yb = batch
-
-            xb = xb.to(device)
-            yb = yb.to(device)
-
-            logits, _ = model(xb)
-            probs = torch.softmax(logits, dim=1)
-
-            # binary anomaly: score = P(anomaly) = probs[:,1]
-            # multi-class: dùng 1 - P(class0) như "anomaly-ness" (fallback)
-            if probs.size(1) == 2:
-                score = probs[:, 1]
-            else:
-                score = 1.0 - probs[:, 0]
-
-            all_scores.append(score.detach().cpu().numpy())
-            all_y.append(yb.detach().cpu().numpy())
-
-    if not all_scores:
-        return 0.5
-
-    scores = np.concatenate(all_scores, axis=0)
-    y_true = np.concatenate(all_y, axis=0)
-
-    # nếu y_true không có đủ 2 class -> roc_auc_score sẽ lỗi
-    try:
-        auroc = roc_auc_score(y_true, scores)
-    except Exception:
-        auroc = 0.5
-
-    return float(auroc)
-
-import math
-
+# ---------------- Common helpers ----------------
 def _set_requires_grad(model, flag: bool):
     for p in model.parameters():
         p.requires_grad = flag
+
 
 @torch.no_grad()
 def extract_candidate_features(cand, X_np, device, batch_size=256):
@@ -683,7 +308,11 @@ def extract_candidate_features(cand, X_np, device, batch_size=256):
         feats.append(f.detach().cpu().numpy())
     return np.concatenate(feats, axis=0)
 
+
 def warmup_candidate_on_source(cand, ds_source, device, steps=50, bs=64, lr=1e-3):
+    """
+    Note: In UAD we only have normal labels (0). This warmup mainly stabilizes feature extraction.
+    """
     cand.train()
     opt = torch.optim.Adam(cand.parameters(), lr=lr)
     dl = DataLoader(ds_source, batch_size=min(bs, len(ds_source)), shuffle=True, drop_last=False)
@@ -706,8 +335,12 @@ def warmup_candidate_on_source(cand, ds_source, device, steps=50, bs=64, lr=1e-3
         loss.backward()
         opt.step()
 
-def fit_deepsvdd_on_features(Zs_np, device, hidden_dim=128, rep_dim=64, nu=0.05,
-                             epochs=10, warmup_epochs=2, lr=1e-3, bs=1024, seed=42):
+
+def fit_deepsvdd_on_features(
+    Zs_np, device,
+    hidden_dim=128, rep_dim=64, nu=0.05,
+    epochs=10, warmup_epochs=2, lr=1e-3, bs=1024, seed=42
+):
     torch.manual_seed(seed)
     Zs = torch.tensor(Zs_np, dtype=torch.float32, device=device)
 
@@ -735,6 +368,7 @@ def fit_deepsvdd_on_features(Zs_np, device, hidden_dim=128, rep_dim=64, nu=0.05,
     svdd.eval()
     return svdd
 
+
 def robust_sigmoid_weights(raw, tau=1.0, w_min=0.05):
     raw = np.asarray(raw)
     med = np.median(raw)
@@ -742,14 +376,13 @@ def robust_sigmoid_weights(raw, tau=1.0, w_min=0.05):
     q75 = np.percentile(raw, 75)
     iqr = max(1e-8, q75 - q25)
     z = (raw - med) / iqr
-
     w = 1.0 / (1.0 + np.exp(z / max(1e-8, tau)))
     w = np.clip(w, w_min, 1.0).astype(np.float32)
     return w
 
+
 @torch.no_grad()
 def score_candidate_svdd_stream(cand, svdd, X_np, device, batch_size=256, mode="dist2"):
-    # NOTE: streaming score full target, tránh subsample target
     cand.eval()
     svdd.eval()
     scores = []
@@ -773,23 +406,351 @@ def score_candidate_svdd_stream(cand, svdd, X_np, device, batch_size=256, mode="
     return np.concatenate(scores, axis=0)
 
 
+def eval_auroc_on_loader_binary(model, loader, device):
+    model.eval()
+    all_scores, all_y = [], []
+
+    with torch.no_grad():
+        for xb, yb in loader:
+            xb = xb.to(device)
+            yb = yb.to(device)
+            logits, _ = model(xb)
+            probs = torch.softmax(logits, dim=1)
+            score = probs[:, 1]
+            all_scores.append(score.detach().cpu().numpy())
+            all_y.append(yb.detach().cpu().numpy())
+
+    if not all_scores:
+        return 0.5
+
+    scores = np.concatenate(all_scores, axis=0)
+    y_true = np.concatenate(all_y, axis=0)
+
+    try:
+        auroc = roc_auc_score(y_true, scores)
+    except Exception:
+        auroc = 0.5
+
+    return float(auroc)
 
 
+# ---- Base architectures for final-only baselines (kept) ----
+def get_base_arches(in_ch: int):
+    from src.adaptnas.search_space import ArchConfig
+    bases = []
+
+    bases.append((
+        "Base_CNN_GRU",
+        ArchConfig(
+            enc_filters=[32, 64],
+            enc_kernels=[5, 3],
+            enc_strides=[1, 2],
+            enc_dilations=[1, 1],
+            enc_pool=("max", 2),
+            enc_activation="relu",
+            seq_type="gru",
+            seq_layers=1,
+            seq_heads=1,
+            seq_hidden=128,
+            seq_kernel=3,
+            seq_dilation=1,
+            clf_layers=2,
+            clf_units=64,
+            d_model=128,
+        )
+    ))
+
+    bases.append((
+        "Base_CNN_TCN",
+        ArchConfig(
+            enc_filters=[32, 64],
+            enc_kernels=[5, 3],
+            enc_strides=[1, 2],
+            enc_dilations=[1, 1],
+            enc_pool=("max", 2),
+            enc_activation="relu",
+            seq_type="tcn",
+            seq_layers=2,
+            seq_heads=1,
+            seq_hidden=128,
+            seq_kernel=5,
+            seq_dilation=2,
+            clf_layers=2,
+            clf_units=64,
+            d_model=128,
+        )
+    ))
+
+    bases.append((
+        "Base_CNN_TRF",
+        ArchConfig(
+            enc_filters=[32, 64],
+            enc_kernels=[5, 3],
+            enc_strides=[1, 2],
+            enc_dilations=[1, 1],
+            enc_pool=("max", 2),
+            enc_activation="relu",
+            seq_type="transformer",
+            seq_layers=1,
+            seq_heads=2,
+            seq_hidden=128,
+            seq_kernel=3,
+            seq_dilation=1,
+            clf_layers=2,
+            clf_units=64,
+            d_model=128,
+        )
+    ))
+
+    return bases
+
+
+def run_final_only_option2(
+    arch_name: str,
+    arch_cfg,
+    Xs, Ys, Xt_train, Yt_train,
+    X_eval, Y_eval,
+    fixed_s_idx,
+    args,
+    device,
+    in_ch,
+    N_ITERS,
+    out_dir="outputs",
+):
+    """
+    FINAL-ONLY for combined mode:
+      warmup on source -> freeze -> SVDD on forward_features (fit on source normal)
+      -> weights on target-train (Xt_train) -> train_bilevel final
+      -> eval on X_eval/Y_eval (test if provided else val)
+    """
+    svdd_epochs = 10
+    svdd_warmup_epochs = 2
+    svdd_nu = 0.05
+    tau = 1.0
+    w_min = 0.05
+
+    model = CandidateModel(in_ch, arch_cfg, num_classes=2).to(device)
+
+    ds_source = ArrayDataset(Xs, Ys)
+    ds_target_val = ArrayDataset(Xt_train, Yt_train)
+
+    val_loader, _, _, _, _ = build_validation(
+        ds_source, ds_target_val,
+        bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
+    )
+
+    warmup_candidate_on_source(model, ds_source, device=device, steps=80, bs=args.batch_size, lr=1e-3)
+
+    _set_requires_grad(model, False)
+    if len(Xs) > 5000:
+        idx_fit = np.random.RandomState(42).choice(len(Xs), size=5000, replace=False)
+        Xs_fit = Xs[idx_fit]
+    else:
+        Xs_fit = Xs
+
+    Fs = extract_candidate_features(model, Xs_fit, device=device, batch_size=256)
+    svdd = fit_deepsvdd_on_features(
+        Fs, device=device, hidden_dim=128, rep_dim=64, nu=svdd_nu,
+        epochs=svdd_epochs, warmup_epochs=svdd_warmup_epochs, lr=1e-3, bs=1024, seed=42
+    )
+
+    raw = score_candidate_svdd_stream(model, svdd, Xt_train, device=device, batch_size=256, mode="dist2")
+    w_ent = robust_sigmoid_weights(raw, tau=tau, w_min=w_min)
+
+    print(
+        f"[FINAL-ONLY][{arch_name}] weights: mean={w_ent.mean():.4f} "
+        f"min={w_ent.min():.4f} max={w_ent.max():.4f} | tau={tau} w_min={w_min} nu={svdd_nu}"
+    )
+
+    _set_requires_grad(model, True)
+    model.train()
+
+    ds_target = ArrayDataset(Xt_train, None, w=w_ent)
+    alpha_final = 0.3 + 0.2 * (N_ITERS - 1)
+
+    train_log = train_bilevel(
+        model, ds_source, ds_target, val_loader,
+        device=device,
+        steps=200,
+        bs=args.batch_size,
+        alpha=alpha_final,
+        gamma=1.0,
+        lr_inner=1e-3,
+        lr_arch=1e-3,
+        use_cosine_decay=True,
+        early_stop=True,
+        patience=10,
+        ckpt_path=os.path.join(out_dir, "checkpoints", f"{arch_name}_final_best.pt")
+    )
+
+    metrics_uad = None
+    if X_eval is not None and Y_eval is not None:
+        model.eval()
+        all_probs = []
+        dl_eval = DataLoader(ArrayDataset(X_eval), batch_size=256, shuffle=False)
+        with torch.no_grad():
+            for xb in dl_eval:
+                xb = xb.to(device)
+                logits, _ = model(xb)
+                all_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
+        probs = np.concatenate(all_probs, axis=0)
+
+        scores = probs[:, 1]
+        ap, auroc = compute_ap_auroc(Y_eval, scores)
+
+        # POT threshold learned from source normal (Xs) via model's anomaly prob on Xs
+        train_probs = []
+        dl_train_norm = DataLoader(ArrayDataset(Xs), batch_size=256, shuffle=False)
+        with torch.no_grad():
+            for xb in dl_train_norm:
+                xb = xb.to(device)
+                logits, _ = model(xb)
+                train_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
+        train_scores = np.concatenate(train_probs, axis=0)[:, 1]
+
+        thr_pot = pot_threshold(train_scores, q=1e-3, level=0.99)
+        p_pot, r_pot, f1_pot = f1_at_threshold(Y_eval, scores, thr_pot)
+
+        f1_b, p_b, r_b, thr_b = best_f1(Y_eval, scores)
+
+        y_pred_bin = (scores >= thr_pot).astype(int)
+        ev = event_f1_and_delay(Y_eval, y_pred_bin)
+
+        metrics_uad = {
+            "ap": float(ap),
+            "auroc": float(auroc),
+            "f1_pot": float(f1_pot),
+            "precision_pot": float(p_pot),
+            "recall_pot": float(r_pot),
+            "thr_pot": float(thr_pot),
+            "f1_best": float(f1_b),
+            "precision_best": float(p_b),
+            "recall_best": float(r_b),
+            "thr_best": float(thr_b),
+            "event_f1": float(ev["event_f1"]),
+            "event_precision": float(ev["event_precision"]),
+            "event_recall": float(ev["event_recall"]),
+            "delay_mean": float(ev["delay_mean"]),
+            "delay_median": float(ev["delay_median"]),
+        }
+
+    return {
+        "arch_name": arch_name,
+        "arch": str(arch_cfg),
+        "metrics_uad": metrics_uad,
+        "train_curves": train_log,
+        "weighting": {
+            "option": "option2_svdd_on_forward_features",
+            "tau": float(tau),
+            "w_min": float(w_min),
+            "svdd_nu": float(svdd_nu),
+            "svdd_epochs": int(svdd_epochs),
+            "svdd_warmup_epochs": int(svdd_warmup_epochs),
+        }
+    }
+
+
+# ---------------- UAD-SOURCE: SVDD objective search (dist2 only) ----------------
+def svdd_objective_on_source_normal(
+    cand,
+    X_train_norm,
+    X_val_norm,
+    device,
+    svdd_epochs=10,
+    svdd_warmup_epochs=2,
+    svdd_nu=0.05,
+    max_fit=5000,
+):
+    """
+    Objective to MINIMIZE:
+      - fit SVDD on train normal features (candidate forward_features)
+      - compute mean(dist2) on val normal
+    This matches "dist2 on candidate features" style used in combined.
+    """
+    _set_requires_grad(cand, False)
+    cand.eval()
+
+    if max_fit is not None and len(X_train_norm) > max_fit:
+        idx_fit = np.random.RandomState(42).choice(len(X_train_norm), size=max_fit, replace=False)
+        X_fit = X_train_norm[idx_fit]
+    else:
+        X_fit = X_train_norm
+
+    F_fit = extract_candidate_features(cand, X_fit, device=device, batch_size=256)
+    svdd = fit_deepsvdd_on_features(
+        F_fit, device=device,
+        hidden_dim=128, rep_dim=64,
+        nu=svdd_nu,
+        epochs=svdd_epochs,
+        warmup_epochs=svdd_warmup_epochs,
+        lr=1e-3, bs=1024, seed=42
+    )
+
+    F_val = extract_candidate_features(cand, X_val_norm, device=device, batch_size=256)
+    with torch.no_grad():
+        dist2 = svdd(torch.tensor(F_val, dtype=torch.float32, device=device)).detach().cpu().numpy()
+
+    obj = float(dist2.mean())
+    info = {"mean_dist2": float(dist2.mean())}
+    return obj, info
+
+
+def fit_final_svdd_and_score(
+    cand,
+    X_train_norm,
+    X_eval,
+    device,
+    svdd_epochs=20,
+    svdd_warmup_epochs=5,
+    svdd_nu=0.05,
+    max_fit=5000,
+):
+    """
+    Fit SVDD on full train normal-only features, then score eval data by dist2.
+    Returns: scores_eval (np.ndarray), scores_train_norm (np.ndarray)
+    """
+    cand.eval()
+    _set_requires_grad(cand, False)
+
+    if max_fit is not None and len(X_train_norm) > max_fit:
+        idx_fit = np.random.RandomState(42).choice(len(X_train_norm), size=max_fit, replace=False)
+        X_fit = X_train_norm[idx_fit]
+    else:
+        X_fit = X_train_norm
+
+    F_fit = extract_candidate_features(cand, X_fit, device=device, batch_size=256)
+    svdd = fit_deepsvdd_on_features(
+        F_fit, device=device,
+        hidden_dim=128, rep_dim=64,
+        nu=svdd_nu,
+        epochs=svdd_epochs,
+        warmup_epochs=svdd_warmup_epochs,
+        lr=1e-3, bs=1024, seed=42
+    )
+
+    scores_train = score_candidate_svdd_stream(cand, svdd, X_train_norm, device=device, batch_size=256, mode="dist2")
+    scores_eval = score_candidate_svdd_stream(cand, svdd, X_eval, device=device, batch_size=256, mode="dist2")
+    return scores_eval, scores_train
 
 
 # ========================= Main =========================
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_or_paths", required=True)
+    parser.add_argument("--dataset_or_paths", required=True,
+                        help="UAD format: train_normal.npz,val_mixed.npz[,test_mixed.npz]")
     parser.add_argument("--epochs_pretrain", type=int, default=10)
     parser.add_argument("--search_candidates", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument(
-        "--uad",
-        action="store_true",
-        help="UAD mode: train_normal.npz,val_mixed.npz[,test_mixed.npz]. "
-             "Train target is unlabeled val_mixed.X, validation uses val_mixed labels.",
+        "--mode",
+        type=str,
+        default="adaptnas_combined",
+        choices=["adaptnas_combined", "uad_source"],
+        help=(
+            "adaptnas_combined: UAD input, SVDD-weighted target + bilevel AdaptNAS + final-only baselines.\n"
+            "uad_source: UAD input, source-only (train_normal) SVDD objective NAS; final DeepSVDD scoring."
+        ),
     )
     args = parser.parse_args()
 
@@ -798,84 +759,49 @@ def main():
     os.makedirs("outputs/figures", exist_ok=True)
     os.makedirs("outputs/checkpoints", exist_ok=True)
 
-    ds = args.dataset_or_paths
     device = args.device
 
     def load_Xy(npz_path):
         X, y = load_npz_if_exists(npz_path)
-        return X, (None if y is None else y.astype(int))
+        y = None if y is None else binarize_y(y)
+        return X, y
 
-    # -------- Load data --------
-    if args.uad:
-        parts = [p.strip() for p in ds.split(",")]
-        if len(parts) < 2:
-            raise ValueError("UAD mode expects: train_normal.npz,val_mixed.npz[,test_mixed.npz]")
+    # -------- Load data (both modes use same UAD inputs) --------
+    parts = [p.strip() for p in args.dataset_or_paths.split(",")]
+    if len(parts) < 2:
+        raise ValueError("Expect: train_normal.npz,val_mixed.npz[,test_mixed.npz]")
 
-        Xs, _ = load_Xy(parts[0])         # normal only
-        Xval, Yval = load_Xy(parts[1])    # mixed + labels
-        Xtest, Ytest = (None, None)
-        if len(parts) >= 3:
-            Xtest, Ytest = load_Xy(parts[2])
+    X_train_norm, y_train_norm = load_Xy(parts[0])   # should be normal-only; y not required
+    X_val, y_val = load_Xy(parts[1])                 # mixed; y required for metrics & (combined) upper step
+    X_test, y_test = (None, None)
+    if len(parts) >= 3:
+        X_test, y_test = load_Xy(parts[2])
 
-        print("UAD mode:")
-        print("  train_normal:", Xs.shape)
-        print("  val_mixed   :", Xval.shape, "(labels:", (Yval is not None), ")")
-        if Xtest is not None:
-            print("  test_mixed  :", Xtest.shape, "(labels:", (Ytest is not None), ")")
+    if y_val is None:
+        raise ValueError("val_mixed.npz must contain y for AUROC/AP/event-F1 evaluation.")
 
-        print("[INFO] Normalizing window size to 128...")
-        Xs = fix_length(Xs, window=128)
-        Xval = fix_length(Xval, window=128)
-        if Xtest is not None:
-            Xtest = fix_length(Xtest, window=128)
+    print("[UAD INPUT]")
+    print("  train_normal:", X_train_norm.shape, "y:", ("yes" if y_train_norm is not None else "no"))
+    print("  val_mixed   :", X_val.shape, "y:", ("yes" if y_val is not None else "no"))
+    if X_test is not None:
+        print("  test_mixed  :", X_test.shape, "y:", ("yes" if y_test is not None else "no"))
 
-        in_ch = Xs.shape[-1]
-        num_classes = 2
+    print("[INFO] Normalizing window size to 128...")
+    X_train_norm = fix_length(X_train_norm, window=128)
+    X_val = fix_length(X_val, window=128)
+    if X_test is not None:
+        X_test = fix_length(X_test, window=128)
 
-    else:
-        ds_low = ds.lower()
-        X_pretrain_multi = None
+    in_ch = X_train_norm.shape[-1]
+    num_classes = 2  # UAD project
 
-        if "," in ds_low:
-            s_path, t_path = ds_low.split(",", 1)
-            s_path = s_path.strip()
-            t_path = t_path.strip()
-            Xs, Ys = load_npz_if_exists(s_path)
-            Xt, Yt = load_npz_if_exists(t_path)
-            Ys = Ys.astype(int)
-            Yt = Yt.astype(int) if Yt is not None else None
+    # create "source labels" for combined mode: all zeros (normal)
+    Ys_source = np.zeros(len(X_train_norm), dtype=int)
 
-            if "data/smd" in s_path and "machine-" in s_path:
-                machine_dir = os.path.dirname(s_path)
-                smd_root = os.path.dirname(machine_dir)
-                X_pretrain_multi = load_all_smd_for_pretrain(smd_root, window=128)
-
-        elif ds_low == "uci_har":
-            Xs, Ys = load_npz_if_exists("data/uci_har/source.npz")
-            Xt, Yt = load_npz_if_exists("data/uci_har/target.npz")
-            Ys = Ys.astype(int)
-            Yt = Yt.astype(int) if Yt is not None else None
-
-        elif ds_low in ("sleepedf", "sleep_edf", "sleep-edf"):
-            Xs, Ys = load_npz_if_exists("data/sleepedf/source.npz")
-            Xt, Yt = load_npz_if_exists("data/sleepedf/target.npz")
-            Ys = Ys.astype(int)
-            Yt = Yt.astype(int) if Yt is not None else None
-
-        else:
-            raise ValueError("Unknown dataset name / format.")
-
-        print("[INFO] Normalizing window size to 128...")
-        Xs = fix_length(Xs, window=128)
-        Xt = fix_length(Xt, window=128)
-        in_ch = Xs.shape[-1]
-
-        if Yt is not None:
-            num_classes = int(max(Ys.max(), Yt.max())) + 1
-        else:
-            num_classes = int(Ys.max()) + 1
-        num_classes = max(num_classes, 2)
-        print(f"[INFO] Detected num_classes = {num_classes} (in_ch={in_ch})")
+    # choose evaluation split for combined final report
+    X_eval = X_test if (X_test is not None and y_test is not None) else X_val
+    y_eval = y_test if (X_test is not None and y_test is not None) else y_val
+    eval_name = "test_mixed" if (X_test is not None and y_test is not None) else "val_mixed"
 
     # -------- Stage 1: TS-TCC pretraining --------
     from src.ts_tcc.models.model import base_Model
@@ -899,16 +825,26 @@ def main():
     temp_opt = torch.optim.Adam(temporal_contr_model.parameters(), lr=config.lr, weight_decay=3e-4)
     tstcc = TSTrainer(model, temporal_contr_model, model_opt, temp_opt, device, config)
 
-    if args.uad:
-        train_x = Xs
+    # pretrain data:
+    # - combined: if SMD machine path detected, can pretrain multi-machine; else pretrain on train_normal + val_mixed
+    # - uad_source: pretrain on train_normal only (as you wanted)
+    X_pretrain_multi = None
+    if "data/smd" in parts[0].replace("\\", "/") and "machine-" in parts[0].replace("\\", "/"):
+        machine_dir = os.path.dirname(parts[0])
+        smd_root = os.path.dirname(machine_dir)
+        if os.path.isdir(smd_root):
+            X_pretrain_multi = load_all_smd_for_pretrain(smd_root, window=128)
+
+    if args.mode == "uad_source":
+        train_x = X_train_norm
         print(f"[INFO] TS-TCC pretraining on train_normal only: {train_x.shape[0]} windows.")
     else:
         if X_pretrain_multi is not None:
             train_x = X_pretrain_multi
             print(f"[INFO] TS-TCC pretraining on multi-machine SMD: {train_x.shape[0]} windows.")
         else:
-            train_x = np.concatenate([Xs, Xt], axis=0)
-            print(f"[INFO] TS-TCC pretraining on current domain only: {train_x.shape[0]} windows.")
+            train_x = np.concatenate([X_train_norm, X_val], axis=0)
+            print(f"[INFO] TS-TCC pretraining on train_normal + val_mixed: {train_x.shape[0]} windows.")
 
     train_ss = {
         "samples": torch.tensor(train_x, dtype=torch.float32),
@@ -918,88 +854,77 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
     tstcc.train(train_dl=train_loader, training_mode="self_supervised")
 
-    # -------- Stage 2-4: AdaptNAS iterative search --------
+    # -------- Stage 2-4: Search --------
     N_ITERS = 3
     history = []
     fixed_s_idx = None
+    best_arch = None
 
-    if args.uad:
-        # UAD: source is normal labeled 0, target is unlabeled Xval (train), validation is (Xval,Yval)
-        Ys = np.zeros(len(Xs), dtype=int)
-        Xtu = Xval.copy()
-        Yval = Yval.astype(int) if Yval is not None else None
+    if args.mode == "uad_source":
+        # split train_normal into train/val-normal for SVDD objective selection
+        rng = np.random.RandomState(42)
+        perm = rng.permutation(len(X_train_norm))
+        n_val = max(50, int(0.2 * len(X_train_norm))) if len(X_train_norm) >= 250 else max(1, int(0.2 * len(X_train_norm)))
+        idx_val = perm[:n_val]
+        idx_tr = perm[n_val:] if n_val < len(X_train_norm) else perm[:max(1, len(X_train_norm)//2)]
 
-        ds_source = ArrayDataset(Xs, Ys)
-        dl_val = DataLoader(ArrayDataset(Xval, Yval), batch_size=args.batch_size, shuffle=False)
+        Xs_tr = X_train_norm[idx_tr]
+        Xs_val = X_train_norm[idx_val]
 
-        n_src_val = min(len(Xs), 200)
-        idx_src_val = np.random.RandomState(42).choice(len(Xs), size=n_src_val, replace=False)
-        val_src = DataLoader(
-            ArrayDataset(Xs[idx_src_val], np.zeros(n_src_val, dtype=int)),
-            batch_size=args.batch_size,
-            shuffle=False,
-        )
-        val_tgt = dl_val
+        best_obj = float("inf")
+        best_state = None
 
-        best_arch = None
-        best_cand = None
+        svdd_epochs = 10
+        svdd_warmup_epochs = 2
+        svdd_nu = 0.05
 
         for iter_id in range(N_ITERS):
-            print(f"\n[ITER {iter_id+1}/{N_ITERS}] AdaptNAS search (UAD)...")
-
-            ds_target_u = ArrayDataset(Xtu)  # unlabeled
-
-            best_val_acc = -float("inf")
-            best_arch_iter = None
-            best_cand_iter = None
+            print(f"\n[ITER {iter_id+1}/{N_ITERS}] UAD_SOURCE search: SVDD objective on train_normal...")
 
             for i in range(args.search_candidates):
                 arch_c = sample_arch()
                 cand = CandidateModel(in_ch, arch_c, num_classes=2).to(device)
 
-                alpha_iter = 0.3 + 0.2 * iter_id
-
-                train_bilevel(
-                    cand, ds_source, ds_target_u, dl_val,
-                    device=device, steps=50, bs=args.batch_size,
-                    alpha=alpha_iter, gamma=1.0,
-                    use_cosine_decay=True, early_stop=False
+                obj, info = svdd_objective_on_source_normal(
+                    cand,
+                    X_train_norm=Xs_tr,
+                    X_val_norm=Xs_val,
+                    device=device,
+                    svdd_epochs=svdd_epochs,
+                    svdd_warmup_epochs=svdd_warmup_epochs,
+                    svdd_nu=svdd_nu,
+                    max_fit=5000,
                 )
-
-                from src.adaptnas.optimizer import AdaptNASOptimizer
-                opt = AdaptNASOptimizer(cand, alpha=0.5, gamma=1.0, lr_inner=1e-3, lr_arch=1e-3, device=device)
-                stats = opt.step_upper_combined(val_src, val_tgt, alpha=alpha_iter)
-                val_acc = 1.0 - stats["hybrid_err"]
 
                 history.append({
                     "iter": iter_id + 1,
                     "arch": str(arch_c),
-                    "val_acc": val_acc,
-                    "src_err": stats["src_err"],
-                    "tgt_err": stats["tgt_err"],
-                    "hybrid_err": stats["hybrid_err"],
-                    "alpha": alpha_iter,
+                    "svdd_obj": float(obj),
+                    "svdd_mean_dist2": float(info["mean_dist2"]),
                 })
 
-                print(
-                    f"  Candidate {i+1}/{args.search_candidates}: "
-                    f"val_acc={val_acc:.4f} | src_err={stats['src_err']:.4f} | tgt_err={stats['tgt_err']:.4f}"
-                )
+                print(f"  Candidate {i+1}/{args.search_candidates}: obj(mean_dist2)={obj:.6f}")
 
-                if val_acc > best_val_acc:
-                    best_val_acc = val_acc
-                    best_arch_iter = arch_c
-                    best_cand_iter = cand
+                if obj < best_obj:
+                    best_obj = float(obj)
+                    best_arch = arch_c
+                    best_state = {k: v.detach().cpu().clone() for k, v in cand.state_dict().items()}
 
-            best_arch = best_arch_iter
-            best_cand = best_cand_iter
+        print(f"\n[UAD_SOURCE SEARCH DONE] ✅ Best arch = {best_arch} | best_obj={best_obj:.6f}")
 
-            print(f"[ITER {iter_id+1}] ✅ Best arch (by val_acc) = {best_arch}")
-            print("[INFO] Selected architecture summary:")
-            print(best_cand)
+        # rebuild best model (optional)
+        if best_arch is None or best_state is None:
+            raise RuntimeError("uad_source: best_arch/best_state is None after search.")
+        best_cand = CandidateModel(in_ch, best_arch, num_classes=2).to(device)
+        best_cand.load_state_dict(best_state)
 
     else:
-        # ================= NON-UAD: Option 2 (SVDD on candidate forward_features) =================
+        # ================= ADAPTNAS-COMBINED (logic kept; input adapted to UAD 3-file) =================
+        Xs = X_train_norm
+        Ys = Ys_source
+        Xt = X_val
+        Yt = y_val
+
         best_overall_auroc = -1.0
         best_overall_val_acc = -1.0
         best_overall_arch = None
@@ -1007,36 +932,26 @@ def main():
         best_overall_cand_state = None
         fixed_s_idx = None
 
-        # Hyperparams Option 2
-        svdd_epochs = 10          # nặng -> giữ vừa phải
+        svdd_epochs = 10
         svdd_warmup_epochs = 2
         svdd_nu = 0.05
         tau = 1.0
         w_min = 0.05
-
-        # dùng subset để đỡ nặng khi extract features
-        max_svdd_fit = 5000       # số sample source dùng fit SVDD
-        max_svdd_score = 8000     # số sample target dùng score (để weight) nếu bạn muốn giảm nặng, có thể None
-
-        best_arch = None
-        best_cand = None
+        max_svdd_fit = 5000
 
         for iter_id in range(N_ITERS):
-            print(f"\n[ITER {iter_id+1}/{N_ITERS}] Option2: SVDD-on-candidate-features & NAS search...")
+            print(f"\n[ITER {iter_id+1}/{N_ITERS}] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...")
 
-            # 6) datasets / validation (giống trước)
             ds_source = ArrayDataset(Xs, Ys)
             ds_target_val = ArrayDataset(Xt, Yt)
 
             if iter_id == 0:
                 val_loader, fixed_s_idx, val_src, val_tgt, _ = build_validation(
-                    ds_source, ds_target_val,
-                    bs=args.batch_size, seed=42, fixed_s_idx=None
+                    ds_source, ds_target_val, bs=args.batch_size, seed=42, fixed_s_idx=None
                 )
             else:
                 val_loader, _, val_src, val_tgt, _ = build_validation(
-                    ds_source, ds_target_val,
-                    bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
+                    ds_source, ds_target_val, bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
                 )
 
             best_iter_auroc = -1.0
@@ -1046,20 +961,16 @@ def main():
 
             for i in range(args.search_candidates):
                 arch_c = sample_arch()
-                cand = CandidateModel(in_ch, arch_c, num_classes).to(device)
+                cand = CandidateModel(in_ch, arch_c, num_classes=2).to(device)
 
                 alpha_iter = 0.3 + 0.2 * iter_id
 
-                # ---- (A) Warmup nhẹ trên source để feature space có nghĩa ----
-                warmup_candidate_on_source(
-                    cand, ds_source, device=device,
-                    steps=50, bs=args.batch_size, lr=1e-3
-                )
+                # warmup on source normal-only labels (0) to stabilize feature extraction
+                warmup_candidate_on_source(cand, ds_source, device=device, steps=50, bs=args.batch_size, lr=1e-3)
 
-                # ---- (B) Freeze tạm thời để train SVDD trên feature space cand ----
+                # fit SVDD on candidate features from source normal
                 _set_requires_grad(cand, False)
 
-                # Subsample SOURCE (được), không subsample TARGET
                 if max_svdd_fit is not None and len(Xs) > max_svdd_fit:
                     idx_fit = np.random.RandomState(42).choice(len(Xs), size=max_svdd_fit, replace=False)
                     Xs_fit = Xs[idx_fit]
@@ -1067,7 +978,6 @@ def main():
                     Xs_fit = Xs
 
                 Fs = extract_candidate_features(cand, Xs_fit, device=device, batch_size=256)
-
                 svdd = fit_deepsvdd_on_features(
                     Fs, device=device,
                     hidden_dim=128, rep_dim=64,
@@ -1077,23 +987,17 @@ def main():
                     lr=1e-3, bs=1024, seed=42
                 )
 
-                # ✅ score TOÀN BỘ Xt bằng streaming (KHÔNG subsample target)
-                raw = score_candidate_svdd_stream(
-                    cand, svdd, Xt, device=device,
-                    batch_size=256, mode="dist2"
-                )
+                raw = score_candidate_svdd_stream(cand, svdd, Xt, device=device, batch_size=256, mode="dist2")
                 w_ent = robust_sigmoid_weights(raw, tau=tau, w_min=w_min)
 
                 print(f"    [W] w_ent stats: mean={w_ent.mean():.4f} min={w_ent.min():.4f} max={w_ent.max():.4f}")
 
-                # ---- (C) Unfreeze lại để train bilevel ----
+                # bilevel training
                 _set_requires_grad(cand, True)
-                cand.train()  # ✅ FIX cuDNN GRU backward
-
+                cand.train()
 
                 ds_target = ArrayDataset(Xt, None, w=w_ent)
 
-                # ---- (D) Bilevel training ----
                 train_bilevel(
                     cand, ds_source, ds_target, val_loader,
                     device=device,
@@ -1107,7 +1011,7 @@ def main():
                     early_stop=False
                 )
 
-                # ---- (E) Eval: val_acc (hybrid_err) + AUROC on val_tgt ----
+                # upper step (uses labels on val_tgt internally)
                 from src.adaptnas.optimizer import AdaptNASOptimizer
                 opt = AdaptNASOptimizer(
                     cand, alpha=0.5, gamma=1.0,
@@ -1116,7 +1020,8 @@ def main():
                 )
                 stats = opt.step_upper_combined(val_src, val_tgt, alpha=alpha_iter)
                 val_acc = 1.0 - stats["hybrid_err"]
-                auroc_tgt = eval_auroc_on_loader(cand, val_tgt, device)
+
+                auroc_tgt = eval_auroc_on_loader_binary(cand, val_tgt, device)
 
                 history.append({
                     "iter": iter_id + 1,
@@ -1134,17 +1039,17 @@ def main():
 
                 print(f"  Candidate {i+1}/{args.search_candidates}: AUROC={auroc_tgt:.4f} | val_acc={val_acc:.4f}")
 
-                # best in this iter
-                if (auroc_tgt > best_iter_auroc) or (auroc_tgt == best_iter_auroc and val_acc > best_iter_val_acc):
-                    best_iter_auroc = auroc_tgt
-                    best_iter_val_acc = val_acc
+                better = (auroc_tgt > best_iter_auroc) or (auroc_tgt == best_iter_auroc and val_acc > best_iter_val_acc)
+                if better:
+                    best_iter_auroc = float(auroc_tgt)
+                    best_iter_val_acc = float(val_acc)
                     best_arch_iter = arch_c
                     best_cand_iter = cand
 
             print(f"[ITER {iter_id+1}] ✅ Best iter arch = {best_arch_iter} | AUROC={best_iter_auroc:.4f} | val_acc={best_iter_val_acc:.4f}")
 
-            # best overall across all iters
-            if (best_iter_auroc > best_overall_auroc) or (best_iter_auroc == best_overall_auroc and best_iter_val_acc > best_overall_val_acc):
+            better_overall = (best_iter_auroc > best_overall_auroc) or (best_iter_auroc == best_overall_auroc and best_iter_val_acc > best_overall_val_acc)
+            if better_overall:
                 best_overall_auroc = float(best_iter_auroc)
                 best_overall_val_acc = float(best_iter_val_acc)
                 best_overall_arch = best_arch_iter
@@ -1152,101 +1057,79 @@ def main():
                 best_overall_cand_state = {k: v.detach().cpu().clone() for k, v in best_cand_iter.state_dict().items()}
 
         best_arch = best_overall_arch
+        if best_arch is None or best_overall_cand_state is None:
+            raise RuntimeError("adaptnas_combined: best_arch/state is None after search.")
 
-        # rebuild best_cand (optional)
-        if best_overall_cand_state is not None and best_arch is not None:
-            best_cand = CandidateModel(in_ch, best_arch, num_classes).to(device)
-            best_cand.load_state_dict(best_overall_cand_state)
+        best_cand = CandidateModel(in_ch, best_arch, num_classes=2).to(device)
+        best_cand.load_state_dict(best_overall_cand_state)
 
-        print(f"\n[SEARCH DONE] ✅ Best OVERALL arch = {best_arch} (iter {best_overall_iter}) | AUROC={best_overall_auroc:.4f} | val_acc={best_overall_val_acc:.4f}")
+        print(f"\n[SEARCH DONE] ✅ Best OVERALL arch = {best_arch} (iter {best_overall_iter}) | best_AUROC={best_overall_auroc:.4f}")
 
+    # -------- Final stage --------
+    print("[INFO] Final stage ...")
 
-        # optional: inspect arch_params distribution
-        if best_cand is not None and hasattr(best_cand, "arch_params"):
-            with torch.no_grad():
-                probs = torch.softmax(best_cand.arch_params, dim=0)
-                print("[INFO] Architecture operation probabilities:")
-                for i, p in enumerate(probs):
-                    print(f"  Op {i}: {p.item():.4f}")
+    res = {
+        "mode": args.mode,
+        "best_arch": str(best_arch),
+        "search_history": history,
+        "eval_split": eval_name,
+    }
 
+    if args.mode == "uad_source":
+        final_model = CandidateModel(in_ch, best_arch, num_classes=2).to(device)
 
-
-    # -------- Final training --------
-    print("[INFO] Final training with best architecture...")
-
-    train_log = None
-    metrics, roc_data = None, None
-    paper_metrics = {}
-    uad_metrics = None
-
-    if args.uad:
-        final_model = CandidateModel(in_ch, best_arch, num_classes).to(device)
-
-        Ys = np.zeros(len(Xs), dtype=int)
-        ds_source = ArrayDataset(Xs, Ys)
-
-        # target train is unlabeled Xval
-        ds_target = ArrayDataset(Xval)  # unlabeled
-
-        # validation on (Xval, Yval)
-        dl_val = DataLoader(ArrayDataset(Xval, Yval), batch_size=args.batch_size, shuffle=False)
-
-        alpha_final = 0.3 + 0.2 * (N_ITERS - 1)
-
-        train_log = train_bilevel(
-            final_model, ds_source, ds_target, dl_val,
+        # final: fit SVDD on full train_normal; score eval split
+        scores_eval, scores_train = fit_final_svdd_and_score(
+            final_model,
+            X_train_norm=X_train_norm,
+            X_eval=X_eval,
             device=device,
-            steps=400,
-            bs=args.batch_size,
-            alpha=alpha_final,
-            gamma=1.0,
-            lr_inner=1e-2,
-            lr_arch=3e-3,
-            use_cosine_decay=True,
-            early_stop=True,
-            patience=10,
-            ckpt_path="outputs/checkpoints/final_best.pt"
+            svdd_epochs=20,
+            svdd_warmup_epochs=5,
+            svdd_nu=0.05,
+            max_fit=5000,
         )
 
-        # evaluate on test_mixed if provided
-        if Xtest is not None and Ytest is not None:
-            final_model.eval()
-            all_probs = []
-            dl_test = DataLoader(ArrayDataset(Xtest), batch_size=256, shuffle=False)
-            with torch.no_grad():
-                for xb in dl_test:
-                    xb = xb.to(device)
-                    logits, _ = final_model(xb)
-                    all_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
-            probs = np.concatenate(all_probs, axis=0)
+        ap, auroc = compute_ap_auroc(y_eval, scores_eval)
 
-            y_pred = probs.argmax(axis=1)
-            from sklearn.metrics import precision_recall_fscore_support
-            prec, rec, f1, _ = precision_recall_fscore_support(Ytest, y_pred, average="macro", zero_division=0)
-            metrics = {"precision": float(prec), "recall": float(rec), "f1": float(f1)}
+        thr_pot = pot_threshold(scores_train, q=1e-3, level=0.99)
+        p_pot, r_pot, f1_pot = f1_at_threshold(y_eval, scores_eval, thr_pot)
+
+        f1_b, p_b, r_b, thr_b = best_f1(y_eval, scores_eval)
+
+        y_pred_bin = (scores_eval >= thr_pot).astype(int)
+        ev = event_f1_and_delay(y_eval, y_pred_bin)
+
+        res["metrics_uad"] = {
+            "ap": float(ap),
+            "auroc": float(auroc),
+            "f1_pot": float(f1_pot),
+            "precision_pot": float(p_pot),
+            "recall_pot": float(r_pot),
+            "thr_pot": float(thr_pot),
+            "f1_best": float(f1_b),
+            "precision_best": float(p_b),
+            "recall_best": float(r_b),
+            "thr_best": float(thr_b),
+            "event_f1": float(ev["event_f1"]),
+            "event_precision": float(ev["event_precision"]),
+            "event_recall": float(ev["event_recall"]),
+            "delay_mean": float(ev["delay_mean"]),
+            "delay_median": float(ev["delay_median"]),
+        }
 
     else:
-        # ================= FINAL NON-UAD: run BASE architectures + BEST NAS arch (final-only) =================
-        # Runs:
-        #   - Base_CNN_GRU, Base_CNN_TCN, Base_CNN_TRF (from get_base_arches)
-        #   - NAS_BestArch (best_arch from search stage)
-        # Saves:
-        #   - outputs/baselines/{arch_name}.json (each run)
-        #   - outputs/baselines_summary.json (summary + best by AUROC)
-        # Loads:
-        #   - outputs/checkpoints/NAS_BestArch_final_best.pt into final_model for COMMON EVAL compatibility
+        # combined final-only baselines (Base_* + NAS_BestArch)
+        Xs = X_train_norm
+        Ys = Ys_source
+        Xt_train = X_val
+        Yt_train = y_val
 
         os.makedirs("outputs/baselines", exist_ok=True)
         os.makedirs("outputs/checkpoints", exist_ok=True)
 
-        # 1) Build list of architectures to run
-        base_arches = get_base_arches(in_ch=in_ch, num_classes=num_classes)
-
-        arch_list = []
-        for name, arch_cfg in base_arches:
-            arch_list.append((name, arch_cfg))
-
-        # include best NAS arch found from your search stage
+        base_arches = get_base_arches(in_ch=in_ch)
+        arch_list = [(name, cfg) for name, cfg in base_arches]
         arch_list.append(("NAS_BestArch", best_arch))
 
         results_baselines = []
@@ -1254,17 +1137,18 @@ def main():
         best_by_auroc_val = -1.0
 
         for arch_name, arch_cfg in arch_list:
-            print(f"\n[FINAL-ONLY] Running: {arch_name}")
+            print(f"\n[FINAL-ONLY] Running: {arch_name} (eval on {eval_name})")
 
             out = run_final_only_option2(
                 arch_name=arch_name,
                 arch_cfg=arch_cfg,
-                Xs=Xs, Ys=Ys, Xt=Xt, Yt=Yt,
+                Xs=Xs, Ys=Ys,
+                Xt_train=Xt_train, Yt_train=Yt_train,
+                X_eval=X_eval, Y_eval=y_eval,
                 fixed_s_idx=fixed_s_idx,
                 args=args,
                 device=device,
                 in_ch=in_ch,
-                num_classes=num_classes,
                 N_ITERS=N_ITERS,
                 out_dir="outputs",
             )
@@ -1279,127 +1163,23 @@ def main():
                 best_by_auroc_val = auroc_val
                 best_by_auroc = out
 
-            # Save each run immediately
             with open(os.path.join("outputs", "baselines", f"{arch_name}.json"), "w", encoding="utf-8") as f:
                 json.dump(out, f, indent=2, ensure_ascii=False)
 
-        # also save summary table
-        summary = {
-            "best_by_auroc": best_by_auroc,
-            "all": results_baselines
-        }
+        summary = {"best_by_auroc": best_by_auroc, "all": results_baselines}
         with open(os.path.join("outputs", "baselines_summary.json"), "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        if best_by_auroc is not None:
-            print(
-                f"\n[BASELINES DONE] Best by AUROC = {best_by_auroc.get('arch_name')} | "
-                f"AUROC={best_by_auroc_val:.4f}"
-            )
-        else:
-            print("\n[BASELINES DONE] No valid AUROC found (metrics_uad missing).")
-
-        # 2) Keep a final_model for COMMON EVAL block.
-        # We choose NAS_BestArch as the "main" final_model and load its checkpoint.
-        final_model = CandidateModel(in_ch, best_arch, num_classes).to(device)
-
-        ckpt = os.path.join("outputs", "checkpoints", "NAS_BestArch_final_best.pt")
-        if os.path.exists(ckpt):
-            sd = torch.load(ckpt, map_location="cpu")
-            # handle either raw state_dict or wrapped checkpoint
-            if isinstance(sd, dict) and ("state_dict" in sd):
-                sd = sd["state_dict"]
-            final_model.load_state_dict(sd, strict=True)
-            final_model.to(device)
-            final_model.eval()
-            print(f"[FINAL-ONLY] Loaded checkpoint for COMMON EVAL: {ckpt}")
-        else:
-            print("[WARN] NAS_BestArch checkpoint not found; COMMON EVAL may be invalid.")
-
-        # NOTE:
-        # train_log is not defined in this baseline sweep branch; keep it as None.
-        train_log = None
-
-
-
-
-
-    # -------- COMMON EVAL (paper + UAD metrics) --------
-    if args.uad:
-        eval_X, eval_y = Xval, Yval
-    else:
-        eval_X, eval_y = (Xt if "Xt" in locals() else None), (Yt if "Yt" in locals() else None)
-
-    if eval_X is not None and eval_y is not None:
-        final_model.eval()
-        all_probs = []
-        dl_eval = DataLoader(ArrayDataset(eval_X), batch_size=256, shuffle=False)
-        with torch.no_grad():
-            for xb in dl_eval:
-                xb = xb.to(device)
-                logits, _ = final_model(xb)
-                all_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
-        probs = np.concatenate(all_probs, axis=0)
-        pred = probs.argmax(axis=1)
-
-        target_acc = float((pred == eval_y).mean())
-        target_err = 100.0 * (1.0 - target_acc)
-        paper_metrics = {"target_top1_acc": target_acc, "target_error_percent": target_err}
-
-        if probs.shape[1] == 2:
-            scores = probs[:, 1]
-            ap, auroc = compute_ap_auroc(eval_y, scores)
-
-            # POT threshold learned from train_normal (Xs) for UAD-style
-            train_probs = []
-            dl_train_norm = DataLoader(ArrayDataset(Xs), batch_size=256, shuffle=False)
-            with torch.no_grad():
-                for xb in dl_train_norm:
-                    xb = xb.to(device)
-                    logits, _ = final_model(xb)
-                    train_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
-            train_scores = np.concatenate(train_probs, axis=0)[:, 1]
-
-            thr_pot = pot_threshold(train_scores, q=1e-3, level=0.99)
-            p_pot, r_pot, f1_pot = f1_at_threshold(eval_y, scores, thr_pot)
-
-            f1_best, p_best, r_best, thr_best = best_f1(eval_y, scores)
-
-            y_pred_bin = (scores >= thr_pot).astype(int)
-            ev = event_f1_and_delay(eval_y, y_pred_bin)
-
-            uad_metrics = {
-                "ap": float(ap),
-                "auroc": float(auroc),
-                "f1_pot": float(f1_pot),
-                "precision_pot": float(p_pot),
-                "recall_pot": float(r_pot),
-                "thr_pot": float(thr_pot),
-                "f1_best": float(f1_best),
-                "precision_best": float(p_best),
-                "recall_best": float(r_best),
-                "thr_best": float(thr_best),
-                "event_f1": float(ev["event_f1"]),
-                "event_precision": float(ev["event_precision"]),
-                "event_recall": float(ev["event_recall"]),
-                "delay_mean": float(ev["delay_mean"]),
-                "delay_median": float(ev["delay_median"]),
-            }
+        res["baselines_summary"] = {"best_by_auroc": best_by_auroc}
+        if best_by_auroc is not None and best_by_auroc.get("metrics_uad") is not None:
+            res["metrics_uad"] = best_by_auroc["metrics_uad"]
 
     # -------- Save results --------
-    res = {"best_arch": str(best_arch), "search_history": history}
-    if paper_metrics:
-        res["metrics_paper"] = paper_metrics
-    if uad_metrics is not None:
-        res["metrics_uad"] = uad_metrics
-    if metrics is not None:
-        res["metrics"] = metrics
-    if train_log is not None:
-        res["train_curves"] = train_log
-
     os.makedirs("outputs", exist_ok=True)
-    with open("outputs/results.json", "w") as f:
-        json.dump(res, f, indent=2)
+    with open("outputs/results.json", "w", encoding="utf-8") as f:
+        json.dump(res, f, indent=2, ensure_ascii=False)
+
+    print("\n[OK] Saved outputs/results.json")
 
 
 if __name__ == "__main__":
