@@ -1,0 +1,55 @@
+{
+  "protocol_version": 2,
+  "split_mode": "search",
+  "shift_level": "medium",
+  "source_machine": "machine-1-2",
+  "target_machine": "machine-1-2",
+  "same_machine": true,
+  "out_dir": "data\\smd_experiments\\temporal_medium\\machine-1-2",
+  "train_normal_count": 369,
+  "train_normal_frac": 1.0,
+  "target_pool_count": 73,
+  "target_pool_hidden_anomaly_count": 0,
+  "target_pool_hidden_anomaly_ratio": 0.0,
+  "val_count": 64,
+  "val_normal_count": 56,
+  "val_anomaly_count": 8,
+  "test_count": 96,
+  "test_normal_count": 84,
+  "test_anomaly_count": 12,
+  "indices": {
+    "pool_start": 128,
+    "pool_end": 201,
+    "val_start": 205,
+    "val_end": 269,
+    "test_start": 273,
+    "test_end": 369
+  },
+  "domain_shift": {
+    "source_vs_target_pool": {
+      "domain_auc": 0.9922194922194922,
+      "domain_acc": 0.9774436090225563,
+      "feature_mean_l2": 8.042861938476562,
+      "feature_std_l2": 17.125347137451172,
+      "n_source_used": 369,
+      "n_target_used": 73
+    },
+    "source_vs_val": {
+      "domain_auc": 0.9962067330488382,
+      "domain_acc": 0.9923076923076923,
+      "feature_mean_l2": 8.406203269958496,
+      "feature_std_l2": 19.825345993041992,
+      "n_source_used": 369,
+      "n_target_used": 64
+    },
+    "source_vs_test": {
+      "domain_auc": 0.9950295122708915,
+      "domain_acc": 0.9857142857142858,
+      "feature_mean_l2": 8.40807056427002,
+      "feature_std_l2": 18.49721908569336,
+      "n_source_used": 369,
+      "n_target_used": 96
+    }
+  },
+  "notes": "No synthetic data was created. train_normal comes from source.npz of the source machine, while target_pool/val/test are contiguous windows from target.npz of the target machine."
+}

@@ -18,10 +18,16 @@ class AdaptNASOptimizer:
 
         # Separate optimizers for lower and upper levels
         self.opt_inner = torch.optim.Adam(
-            [p for n, p in model.named_parameters() if "discriminator" not in n],
+            [
+                p for n, p in model.named_parameters()
+                if p.requires_grad and "discriminator" not in n and "arch_params" not in n
+            ],
             lr=lr_inner
         )
-        self.opt_d = torch.optim.Adam(model.discriminator.parameters(), lr=lr_inner)
+        self.opt_d = torch.optim.Adam(
+            [p for p in model.discriminator.parameters() if p.requires_grad],
+            lr=lr_inner
+        )
         arch_params = [p for n, p in model.named_parameters() if "arch_params" in n]
         self.opt_arch = torch.optim.Adam(arch_params, lr=lr_arch) if arch_params else None
 

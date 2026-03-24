@@ -12,7 +12,9 @@ setup(
         "torchvision",
         "numpy",
         "scikit-learn",
-        "matplotlib"
+        "matplotlib",
+        "pandas",
+        "einops",
     ],
     python_requires=">=3.8",
 )
