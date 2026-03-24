@@ -1,244 +1,364 @@
-# TS-TCC + AdaptNAS for Unsupervised Anomaly Detection (UAD)
+# NAS-ADE for Unsupervised Time-Series Anomaly Detection
 
-This repository implements a **domain-adaptive neural architecture search (NAS) pipeline for time-series anomaly detection**, combining self-supervised representation learning, reliability-aware target weighting, and bilevel NAS.
+This repository implements a UAD-oriented neural architecture search pipeline for multivariate time series. It combines:
 
----
+- TS-TCC self-supervised pretraining
+- DeepSVDD-based one-class scoring
+- AdaptNAS-style bilevel optimization for target-aware architecture selection
 
-## 🔧 Core Components
+The current codebase supports two modes:
 
-The pipeline integrates three key components:
+- `uad_source`: source-only UAD using `train_normal` and DeepSVDD scoring
+- `adaptnas_combined`: source-normal plus unlabeled target-pool adaptation with reliability-aware weighting
 
-* **TS-TCC** (Eldele et al., IJCAI 2021)
-  Self-supervised representation learning for time-series, used as a universal feature pretraining stage.
+## What Is Implemented
 
-* **AdaptNAS** (Xu et al., KDD 2023)
-  Bilevel neural architecture search framework with domain-adversarial training.
+The current implementation now aligns with the intended project design in three important ways:
 
-* **Our contributions**:
+- TS-TCC pretraining is used to initialize candidate encoders before search/final training instead of being trained and then ignored.
+- `arch_params` now affect the actual forward pass by weighting encoder-depth features.
+- Combined mode supports a separate `target_pool_unlabeled.npz`, so target adaptation no longer has to reuse `val_mixed`.
 
-  * Reliability-aware **unsupervised target weighting** using **DeepSVDD (soft-boundary)**
-  * Integration of anomaly-aware weighting into AdaptNAS (weakly supervised adaptation)
-  * Architecture search space tailored for **time-series UAD**
-  * Empirical comparison between **hand-crafted baselines** and **NAS-selected architectures**
+## Project Layout
 
----
+```text
+src/
+  pipeline.py                # main end-to-end entrypoint
+  adaptnas/
+    search_space.py          # discrete search space sampling
+    trainer.py               # bilevel training loop
+    optimizer.py             # lower/upper-level optimizers
+  models/
+    tscnn.py                 # CNN encoder blocks
+    transformer.py           # Transformer sequence encoder
+    classifier.py            # MLP classifier head
+    discriminator.py         # domain discriminator
+    deepsvdd.py              # DeepSVDD soft-boundary objective
+  ts_tcc/                    # TS-TCC components
+  utils/
+    metrics.py               # AUROC, AP, Best-F1, POT-like F1, event-F1, delay
 
-## 📂 Project Structure
-
-```
-project_root/
-│
-├── src/
-│   ├── pipeline.py              # Main end-to-end pipeline
-│   │
-│   ├── ts_tcc/                  # TS-TCC (IJCAI'21)
-│   │   ├── models/
-│   │   ├── trainer/
-│   │   └── dataloader/
-│   │
-│   ├── adaptnas/                # AdaptNAS (KDD'23-style)
-│   │   ├── search_space.py      # Architecture search space
-│   │   ├── trainer.py           # Bilevel training
-│   │   └── optimizer.py
-│   │
-│   ├── models/
-│   │   ├── tscnn.py             # CNN encoder
-│   │   ├── transformer.py       # Transformer sequence model
-│   │   ├── classifier.py        # MLP head
-│   │   ├── discriminator.py     # Domain discriminator
-│   │   └── deepsvdd.py          # DeepSVDD (soft-boundary)
-│   │
-│   └── utils/
-│       └── metrics.py           # AUROC, AP, POT, event-F1, delay
-│
-├── data/                        # Preprocessed datasets (.npz)
-├── outputs/
-│   ├── checkpoints/             # Saved model checkpoints
-│   ├── baselines/               # Per-architecture results
-│   ├── baselines_summary.json
-│   └── results.json
-│
-├── README.md
-└── requirements.txt
+scripts/
+  preprocess_smd.py          # raw SMD -> source.npz / target.npz
+  make_uad_smd.py            # build a real-data UAD experiment split (temporal or cross-machine)
+  build_domain_shift_smd.py  # build a temporal/cross-machine domain-shift suite + manifest
+  run_all_smd.py             # batch runner for all SMD machines
+  run_pipeline.sh            # single-run helper
 ```
 
----
+## Environment Setup
 
-## 📊 Supported Datasets
+Create and activate a Python environment, then install dependencies:
 
-The pipeline is designed for **real-world time-series anomaly detection** (no synthetic data).
-
-Currently tested on:
-
-* **SMD (Server Machine Dataset)**
-* **UCI HAR**
-* **Sleep-EDF**
-
-### Dataset Format
-
-Each dataset is stored as `.npz`:
-
-```python
-X: np.ndarray of shape (N, T, C)
-y: np.ndarray of shape (N,)  # optional for target
+```bash
+pip install -r requirements.txt
 ```
 
-* `source.npz`: labeled source domain
-* `target.npz`: target domain (labels only used for evaluation)
+If you already created `venv/`, update it after pulling new changes:
 
----
+```bash
+./venv/Scripts/python.exe -m pip install -r requirements.txt
+```
 
-## 🚀 Running the Pipeline
+### Optional: enable NVIDIA GPU on Windows
 
-### Non-UAD Mode (Domain-Adaptive UAD)
+If your machine has an NVIDIA GPU, reinstall PyTorch from the official CUDA wheel index inside the project `venv`:
+
+```bash
+./venv/Scripts/python.exe -m pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+Verify that CUDA is available:
+
+```bash
+./venv/Scripts/python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no-gpu')"
+```
+
+`run.ps1` defaults to `-Device auto`, so once CUDA is available it will automatically run on GPU.
+
+## Dataset Protocols
+
+### 1. `uad_source`
+
+Use:
+
+```text
+train_normal.npz,val_mixed.npz[,test_mixed.npz]
+```
+
+- `train_normal.npz`: normal-only source windows
+- `val_mixed.npz`: mixed normal/anomaly windows with labels
+- `test_mixed.npz`: optional mixed test split with labels
+
+### 2. `adaptnas_combined`
+
+Recommended protocol:
+
+```text
+train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz[,test_mixed.npz]
+```
+
+- `train_normal.npz`: normal-only source windows
+- `target_pool_unlabeled.npz`: unlabeled target windows used only for adaptation/weighting
+- `val_mixed.npz`: labeled mixed split for upper-level selection
+- `test_mixed.npz`: optional labeled evaluation split
+
+Legacy fallback is still supported:
+
+```text
+train_normal.npz,val_mixed.npz,test_mixed.npz
+```
+
+In that fallback, `val_mixed` is reused as the target pool and a warning is printed.
+
+## Data Preparation
+
+### Raw SMD to windowed `source.npz` / `target.npz`
+
+```bash
+python scripts/preprocess_smd.py --raw_root data/ServerMachineDataset --out_root data/smd
+```
+
+This creates, per machine:
+
+- `source.npz`
+- `target.npz`
+
+### Important constraint
+
+The new experiment builder does not generate synthetic data. It only reorganizes real windows that already exist in SMD:
+
+- `train_normal` always comes from the source machine `source.npz`
+- `target_pool_unlabeled`, `val_mixed`, and `test_mixed` always come from a real target machine `target.npz`
+- domain shift is created either by a later target timeline segment or by using another real machine as the target domain
+
+### Build a same-machine temporal-shift experiment
+
+```bash
+python scripts/make_uad_smd.py \
+  --machine_dir data/smd/machine-1-1 \
+  --split_mode search \
+  --shift_level medium \
+  --target_pool_frac 0.2 \
+  --val_frac 0.3 \
+  --guard 4
+```
+
+This creates a new folder like:
+
+```text
+data/smd_experiments/temporal_medium/machine-1-1/
+```
+
+with:
+
+- `train_normal.npz`
+- `target_pool_unlabeled.npz`
+- `val_mixed.npz`
+- `test_mixed.npz`
+- `split_metadata.json`
+
+`split_metadata.json` includes:
+
+- source machine / target machine
+- hidden anomaly ratio inside `target_pool_unlabeled`
+- anomaly counts in `val_mixed` and `test_mixed`
+- domain-shift proxy scores such as source-vs-target-pool `domain_auc`
+
+### Build a cross-machine domain-shift experiment
+
+This is the strongest form of deployment shift in this repository:
+
+- train on machine A normal data
+- adapt/evaluate on machine B target data
+
+Example:
+
+```bash
+python scripts/make_uad_smd.py \
+  --machine_dir data/smd/machine-1-1 \
+  --target_machine_dir data/smd/machine-1-2 \
+  --split_mode search \
+  --shift_level medium \
+  --guard 4
+```
+
+This creates:
+
+```text
+data/smd_experiments/cross_machine_medium/machine-1-1__to__machine-1-2/
+```
+
+### Build a benchmark suite automatically
+
+Generate a small suite:
+
+```bash
+python scripts/build_domain_shift_smd.py \
+  --machines machine-1-1,machine-1-2 \
+  --shift_levels medium \
+  --build_temporal \
+  --build_cross_machine \
+  --same_family_only \
+  --topk_cross 1
+```
+
+Generate a larger suite across all prepared SMD machines:
+
+```bash
+python scripts/build_domain_shift_smd.py \
+  --shift_levels medium,hard \
+  --build_temporal \
+  --build_cross_machine \
+  --same_family_only \
+  --topk_cross 1
+```
+
+This writes experiment folders under `data/smd_experiments/` and a global manifest at:
+
+- `data/smd_experiments/manifest.json`
+
+## Running the Pipeline
+
+If you use `run.ps1`, the script now defaults to `-Device auto` and falls back to `cpu` automatically when the local PyTorch build does not support CUDA.
+
+`run.ps1` also accepts `-DataDir`, so you can point it directly to any generated experiment folder.
+
+### UAD source mode
 
 ```bash
 python -m src.pipeline \
-  --dataset_or_paths data/smd/machine-1-1/source.npz,data/smd/machine-1-1/target.npz \
+  --dataset_or_paths data/smd/machine-1-1/train_normal.npz,data/smd/machine-1-1/val_mixed.npz,data/smd/machine-1-1/test_mixed.npz \
+  --mode uad_source \
   --epochs_pretrain 50 \
-  --search_candidates 10 \
-  --batch_size 64 \
+  --search_candidates 20 \
+  --batch_size 128 \
   --device cuda
 ```
 
----
+### Combined mode with separate target pool
 
-## 🧠 Full Pipeline Overview
+```bash
+python -m src.pipeline \
+  --dataset_or_paths data/smd/machine-1-1/train_normal.npz,data/smd/machine-1-1/target_pool_unlabeled.npz,data/smd/machine-1-1/val_mixed.npz,data/smd/machine-1-1/test_mixed.npz \
+  --mode adaptnas_combined \
+  --epochs_pretrain 50 \
+  --search_candidates 20 \
+  --batch_size 128 \
+  --device cuda
+```
 
-### 1️⃣ TS-TCC Pretraining
+### Run a generated experiment folder with `run.ps1`
 
-* Self-supervised training on **source + target (or multi-machine data)**.
-* Produces robust temporal representations shared across domains.
+Temporal-shift example:
 
----
+```powershell
+.\run.ps1 -Mode uad_source -DataDir data\smd_experiments\temporal_medium\machine-1-1
+```
 
-### 2️⃣ Architecture Search Space
+Cross-machine example:
 
-Defined in `search_space.py`, including:
+```powershell
+.\run.ps1 -Mode adaptnas_combined -DataDir data\smd_experiments\cross_machine_medium\machine-1-1__to__machine-1-2
+```
 
-* CNN encoder (depth, kernel, stride, dilation)
-* Sequence model:
+## End-to-End Flow
 
-  * GRU
-  * TCN
-  * Transformer
-* Classifier depth & width
-* Latent dimension
+### TS-TCC pretraining
 
-This space supports both **hand-crafted baselines** and **NAS-selected architectures**.
+- `uad_source`: pretrains on `train_normal`
+- `adaptnas_combined`: pretrains on available unlabeled windows, preferring multi-machine SMD when available
 
----
+The pretrained TS-TCC encoder is then used to initialize candidate encoder weights before search and final training. It is not kept as a parallel branch during candidate inference.
 
-### 3️⃣ Reliability-Aware Target Weighting (Key Contribution)
+### Candidate model
 
-For each candidate architecture:
+Each sampled candidate contains:
 
-1. Warm up the model on **source labels**
-2. Freeze the model
-3. Extract `forward_features()` on source
-4. Train **DeepSVDD (soft-boundary)** on source features
-5. Score **all target samples**
-6. Convert anomaly scores into **continuous reliability weights** via robust sigmoid
+- 1 to 3 temporal CNN blocks
+- a projection to `d_model`
+- one sequence family: `Transformer`, `GRU`, or `TCN`
+- classifier head
+- domain discriminator
 
-This transforms UAD into a **weakly supervised adaptation problem**.
+`arch_params` now control:
 
----
+- the mixture over encoder depths
 
-### 4️⃣ AdaptNAS Bilevel Optimization
+### `uad_source`
 
-* **Lower-level**:
-  Train model parameters using:
+For each sampled architecture:
 
-  * Labeled source
-  * Weighted (reliable) target samples
+1. Build candidate features on source-normal windows
+2. Fit DeepSVDD on source-normal features
+3. Score held-out source-normal windows by mean SVDD distance
+4. Select the architecture with the smallest validation compactness objective
 
-* **Upper-level**:
-  Update architecture parameters using:
+Final anomaly scores are SVDD distances on the selected architecture.
 
-  * Source validation
-  * Target validation (labels used only for evaluation & selection)
+### `adaptnas_combined`
 
-Best architecture is selected by:
+For each sampled architecture:
 
-* **Primary**: AUROC on target validation
-* **Secondary**: validation accuracy
+1. Warm up on source-normal labels (`0`) to stabilize features
+2. Fit DeepSVDD on source-normal features
+3. Score `target_pool_unlabeled` and convert distances into reliability weights
+4. Run lower-level training with:
+   - source CE
+   - weighted target entropy minimization
+   - GRL-based domain loss
+5. Run upper-level updates on labeled validation loaders
+6. Select by target validation AUROC, then validation accuracy
 
----
+Final anomaly scores are `P(y=1 | x)` from the trained classifier.
 
-### 5️⃣ Final Training & Evaluation
+## Metrics
 
-We run **final-only training** for:
+Implemented metrics:
 
-* Three hand-crafted baselines
-* The best NAS-selected architecture
+- AUROC
+- Average Precision
+- Best-F1
+- POT-like F1 using thresholds estimated from source-normal scores
+- Event-F1
+- Detection delay (mean and median)
 
-All models use the **same weighting strategy** for fair comparison.
+## Outputs
 
----
+Main artifacts are written to `outputs/`:
 
-## 🧪 Baselines
+- `outputs/results.json`
+- `outputs/baselines/*.json`
+- `outputs/baselines_summary.json`
+- `outputs/checkpoints/*.pt`
+- `outputs/figures/*.png`
 
-Baselines are constructed **directly from the same search space**:
+## Batch Running on SMD
 
-| Baseline     | Encoder | Sequence Model |
-| ------------ | ------- | -------------- |
-| Base_CNN_GRU | CNN     | GRU            |
-| Base_CNN_TCN | CNN     | TCN            |
-| Base_CNN_TRF | CNN     | Transformer    |
+Run all prepared machines in source mode:
 
-They represent the **three major families of temporal modeling** supported by the search space.
+```bash
+python scripts/run_all_smd.py --mode uad_source
+```
 
----
+Run all prepared machines in combined mode:
 
-## 📈 Evaluation Metrics
+```bash
+python scripts/run_all_smd.py --mode adaptnas_combined
+```
 
-We report **UAD-standard metrics**:
+Run all generated experiment folders under a custom root:
 
-* AUROC
-* Average Precision (AP)
-* F1 (best & POT)
-* Event-level F1
-* Detection delay (mean / median)
+```bash
+python scripts/run_all_smd.py --mode adaptnas_combined --data_root data/smd_experiments/cross_machine_medium
+```
 
-Classification accuracy (`target_top1_acc`) is reported **only for completeness**, not as the primary metric.
+If `target_pool_unlabeled.npz` exists, the batch runner uses the 4-file protocol automatically.
 
----
+## Notes
 
-## 📂 Outputs
-
-* `outputs/baselines/*.json`
-  → Per-architecture metrics
-
-* `outputs/baselines_summary.json`
-  → Best baseline & NAS comparison
-
-* `outputs/results.json`
-  → NAS search history & final results
-
----
-
-## 📌 Key Takeaways
-
-* NAS-selected architectures **consistently outperform** hand-crafted baselines
-* Reliability-aware weighting is **crucial** for stable adaptation
-* The method bridges **unsupervised anomaly detection** and **weakly supervised NAS**
-
----
-
-## 🔗 Citation & Credit
-
-* **TS-TCC**
-  Eldele et al., *Time-Series Representation Learning via Temporal and Contextual Contrasting*, IJCAI 2021.
-  [https://github.com/emadeldeen24/TS-TCC](https://github.com/emadeldeen24/TS-TCC)
-
-* **AdaptNAS**
-  Xu et al., *AdaptNAS: Domain-Adaptive Neural Architecture Search*, KDD 2023.
-
-If you use this code, please cite the above works and our upcoming paper.
-
----
-
-## ⚖️ License
-
-* Our code: MIT License
-* TS-TCC components: MIT License (retained from original repository)
+- A working Python environment is required; this repository does not bundle one.
+- `scripts/run_pipeline.sh` and `scripts/run_all_smd.py` now use the current CLI based on `--mode`.
+- Combined mode is most meaningful when `target_pool_unlabeled` is separated from `val_mixed` and `test_mixed`.
+- For domain-shift experiments, prefer the new `data/smd_experiments/...` folders instead of overwriting the original `data/smd/machine-*` directories.
+- Cross-machine experiments are a valid domain-shift setting in SMD because the feature schema is aligned, while the machine operating distributions can differ substantially.

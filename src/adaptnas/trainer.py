@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 from .optimizer import AdaptNASOptimizer
 from ..utils.visualization import plot_curve
+from ..utils.schedulers import exp_grl, cosine_grl
 import torch.nn.functional as F
 import os
 
@@ -134,7 +135,8 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
             if yt_w is not None:
                 yt_w = yt_w.to(device)
 
-            gamma_t = gamma * float(p)
+            sched = exp_grl if grl_sched == 'exp' else cosine_grl
+            gamma_t = gamma * sched(float(p))
             logits_s, d_s = model(xb, lambda_gr=gamma_t)
             logits_t, d_t = model(xt, lambda_gr=gamma_t)
 
