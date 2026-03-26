@@ -1,0 +1,16 @@
+[INFO] Family = omni_anomaly (paper-faithful source-only path).
+[OMNI RAW INPUT]
+  machine     : machine-2-8
+  train raw   : (23702, 38)
+  test raw    : (23703, 38)
+  labels test : (23703,) aligned: (23604,)
+  window      : 100 stride: 1
+
+[FIXED BASELINE] OmniAnomaly paper-faithful fixed architecture...
+
+[ITER 1/1] OMNI UAD_SOURCE partial NAS on raw SMD...
+  Candidate 1/1: obj(val_score_last)=15.898166
+
+[OMNI SEARCH DONE] Best partial-NAS arch = OmniArchConfig(window_length=100, z_dim=8, rnn_hidden=300, dense_dim=300, use_connected_z_q=True, use_connected_z_p=True, posterior_flow='nf', nf_layers=30, batch_size=64, max_epoch=1, valid_ratio=0.3, lr=0.001, l2_reg=0.0001, gradient_clip_norm=10.0, test_n_z=1, stride=1) | best_obj=15.898166
+
+[OK] Saved outputs/results.json

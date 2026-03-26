@@ -1,0 +1,143 @@
+{
+  "mode": "uad_source",
+  "family": "omni_anomaly",
+  "protocol": "raw_smd_machine_by_machine",
+  "machine": "machine-1-2",
+  "raw_smd_root": "data\\ServerMachineDataset",
+  "best_arch": "OmniArchConfig(window_length=100, z_dim=8, rnn_hidden=300, dense_dim=300, use_connected_z_q=True, use_connected_z_p=True, posterior_flow='nf', nf_layers=30, batch_size=64, max_epoch=1, valid_ratio=0.3, lr=0.001, l2_reg=0.0001, gradient_clip_norm=10.0, test_n_z=1, stride=1)",
+  "search_history": [
+    {
+      "iter": 1,
+      "arch": "OmniArchConfig(window_length=100, z_dim=8, rnn_hidden=300, dense_dim=300, use_connected_z_q=True, use_connected_z_p=True, posterior_flow='nf', nf_layers=30, batch_size=64, max_epoch=1, valid_ratio=0.3, lr=0.001, l2_reg=0.0001, gradient_clip_norm=10.0, test_n_z=1, stride=1)",
+      "objective": 28.19112313010476,
+      "val_loss": 3084.5102883078835,
+      "val_score_last": 28.19112313010476
+    }
+  ],
+  "omni_family_notes": {
+    "target": "paper_faithful_source_only",
+    "scoring": "negative_last_point_reconstruction_log_probability",
+    "posterior_flow": "planar_nf",
+    "ts_tcc": "disabled_for_omni_family",
+    "deepsvdd": "disabled_for_omni_family"
+  },
+  "fixed_baseline": {
+    "arch": "OmniArchConfig(window_length=100, z_dim=3, rnn_hidden=500, dense_dim=500, use_connected_z_q=True, use_connected_z_p=True, posterior_flow='nf', nf_layers=20, batch_size=64, max_epoch=1, valid_ratio=0.3, lr=0.001, l2_reg=0.0001, gradient_clip_norm=10.0, test_n_z=1, stride=1)",
+    "metrics_uad": {
+      "ap": 0.18042614416446126,
+      "auroc": 0.8554364057283049,
+      "f1_pot": 0.8029929704682168,
+      "precision_pot": 0.956632628657331,
+      "recall_pot": 0.6918819060538394,
+      "thr_pot": 139.06763931184219,
+      "f1_best": 0.858442473438762,
+      "precision_best": 0.8499095687177294,
+      "recall_best": 0.8671586555874787,
+      "thr_best": 85.4980487060543,
+      "latency_best": 9.444339507338807,
+      "latency_pot": 15.19969600607988,
+      "event_f1": 0.3125,
+      "event_precision": 0.22727272727272727,
+      "event_recall": 0.5,
+      "delay_mean": 0.0,
+      "delay_median": 0.0
+    },
+    "val_stats": {
+      "val_loss": -312.8233106092973,
+      "val_score_last": -7.124332675066861
+    },
+    "search_train_curve": {
+      "train_loss": [
+        3194.168528889501
+      ],
+      "train_score_last": [
+        29.824344778938812
+      ],
+      "val_loss": [
+        -312.7796435963024
+      ],
+      "val_score_last": [
+        -7.08056422363628
+      ]
+    },
+    "final_train_curve": {
+      "train_loss": [
+        -2229.13286001314
+      ],
+      "train_score_last": [
+        -25.301038282835062
+      ],
+      "val_loss": [],
+      "val_score_last": []
+    }
+  },
+  "searched_partial_nas": {
+    "arch": "OmniArchConfig(window_length=100, z_dim=8, rnn_hidden=300, dense_dim=300, use_connected_z_q=True, use_connected_z_p=True, posterior_flow='nf', nf_layers=30, batch_size=64, max_epoch=1, valid_ratio=0.3, lr=0.001, l2_reg=0.0001, gradient_clip_norm=10.0, test_n_z=1, stride=1)",
+    "metrics_uad": {
+      "ap": 0.17629972626446874,
+      "auroc": 0.8544368239847757,
+      "f1_pot": 0.7812450671750351,
+      "precision_pot": 0.8971291651404506,
+      "recall_pot": 0.6918819060538394,
+      "thr_pot": 147.99212787859506,
+      "f1_best": 0.8245564011382058,
+      "precision_best": 0.7859531641144956,
+      "recall_best": 0.8671586555874787,
+      "thr_best": 81.50937965393041,
+      "latency_best": 8.333240741769536,
+      "latency_pot": 20.799584008319833,
+      "event_f1": 0.17543859649122806,
+      "event_precision": 0.10638297872340426,
+      "event_recall": 0.5,
+      "delay_mean": 0.0,
+      "delay_median": 0.0
+    },
+    "val_stats": {
+      "val_loss": 3084.5102883078835,
+      "val_score_last": 28.19112313010476
+    },
+    "search_train_curve": {
+      "train_loss": [
+        6082.698593257934
+      ],
+      "train_score_last": [
+        35.17291846755863
+      ],
+      "val_loss": [
+        3083.8614413174714
+      ],
+      "val_score_last": [
+        28.10734278938987
+      ]
+    },
+    "final_train_curve": {
+      "train_loss": [
+        -1134.4678899873563
+      ],
+      "train_score_last": [
+        -15.134097123210669
+      ],
+      "val_loss": [],
+      "val_score_last": []
+    }
+  },
+  "metrics_uad": {
+    "ap": 0.17629972626446874,
+    "auroc": 0.8544368239847757,
+    "f1_pot": 0.7812450671750351,
+    "precision_pot": 0.8971291651404506,
+    "recall_pot": 0.6918819060538394,
+    "thr_pot": 147.99212787859506,
+    "f1_best": 0.8245564011382058,
+    "precision_best": 0.7859531641144956,
+    "recall_best": 0.8671586555874787,
+    "thr_best": 81.50937965393041,
+    "latency_best": 8.333240741769536,
+    "latency_pot": 20.799584008319833,
+    "event_f1": 0.17543859649122806,
+    "event_precision": 0.10638297872340426,
+    "event_recall": 0.5,
+    "delay_mean": 0.0,
+    "delay_median": 0.0
+  }
+}

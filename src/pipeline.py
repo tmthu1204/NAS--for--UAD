@@ -27,15 +27,30 @@ import argparse
 import os
 import json
 import random
+from dataclasses import replace
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from src.data.datasets import ArrayDataset
+from src.data.omni_smd import (
+    RawSMDMachine,
+    aligned_last_point_labels,
+    contiguous_train_valid_split,
+)
 from src.ts_tcc.trainer.trainer import TSTrainer
 from src.adaptnas.search_space import sample_arch
 from src.adaptnas.trainer import train_bilevel
+from src.families.omni_anomaly import (
+    OmniAnomalyModel,
+    get_fixed_paper_omni_arch,
+    sample_omni_arch,
+    train_omni_source,
+    validate_omni_on_series,
+    score_omni_series,
+)
+from src.families.omni_eval import bf_search as omni_bf_search, pot_eval as omni_pot_eval
 
 from src.models.tscnn import EncoderCNN
 from src.models.transformer import ARTransformer
@@ -830,14 +845,401 @@ def fit_final_svdd_and_score(
     return scores_eval, scores_train
 
 
+_OMNI_PAPER_LOW_QUANTILES = {
+    "smd_group_1": 0.0001,
+    "smd_group_2": 0.0025,
+    "smd_group_3": 0.0050,
+}
+
+_OMNI_REPO_LEVELS = {
+    "smd_group_1": 0.0050,
+    "smd_group_2": 0.0075,
+    "smd_group_3": 0.0001,
+}
+
+_OMNI_REFERENCE_Q = {
+    "paper": 1e-4,
+    "repo": 1e-3,
+}
+
+
+def _omni_group_from_machine(machine: str) -> str:
+    if machine.startswith("machine-1-"):
+        return "smd_group_1"
+    if machine.startswith("machine-2-"):
+        return "smd_group_2"
+    if machine.startswith("machine-3-"):
+        return "smd_group_3"
+    return "unknown"
+
+
+def resolve_omni_reference_settings(machine: str, args):
+    """
+    Resolve POT settings for OmniAnomaly in either paper-faithful or repo-faithful mode.
+
+    Notes:
+    - Paper appendix (KDD'19) reports q=1e-4 and SMD low quantiles:
+      group1=0.0001, group2=0.0025, group3=0.005.
+    - The public OmniAnomaly repo comments recommend:
+      group1=0.005, group2=0.0075, group3=0.0001 with q=1e-3.
+    """
+    ref = getattr(args, "omni_reference", "paper")
+    group = _omni_group_from_machine(machine)
+
+    if ref == "repo":
+        auto_level = _OMNI_REPO_LEVELS.get(group, 0.01)
+    else:
+        auto_level = _OMNI_PAPER_LOW_QUANTILES.get(group, 0.005)
+
+    auto_q = _OMNI_REFERENCE_Q.get(ref, 1e-4)
+
+    pot_q = float(args.omni_pot_q) if args.omni_pot_q and args.omni_pot_q > 0 else float(auto_q)
+    pot_level = float(args.omni_pot_level) if args.omni_pot_level and args.omni_pot_level > 0 else float(auto_level)
+
+    return {
+        "reference": ref,
+        "group": group,
+        "pot_q": pot_q,
+        "pot_level": pot_level,
+        "pot_q_source": "cli" if args.omni_pot_q and args.omni_pot_q > 0 else ref,
+        "pot_level_source": "cli" if args.omni_pot_level and args.omni_pot_level > 0 else ref,
+    }
+
+
+def _omni_metrics_from_scores(y_eval, scores_eval, scores_train, *, pot_q=1e-3, pot_level=0.98):
+    ap, auroc = compute_ap_auroc(y_eval, scores_eval)
+    normal_scores_eval = -np.asarray(scores_eval).astype(float)
+    normal_scores_train = -np.asarray(scores_train).astype(float)
+
+    bf_res = omni_bf_search(
+        normal_scores_eval,
+        y_eval,
+        start=float(normal_scores_eval.min()),
+        end=float(normal_scores_eval.max()),
+        step_num=100,
+        display_freq=200,
+        verbose=False,
+    )
+    pot_res = omni_pot_eval(
+        normal_scores_train,
+        normal_scores_eval,
+        y_eval,
+        q=pot_q,
+        level=pot_level,
+    )
+
+    thr_pot = float(-pot_res["pot-threshold"])
+    p_pot = float(pot_res["pot-precision"])
+    r_pot = float(pot_res["pot-recall"])
+    f1_pot = float(pot_res["pot-f1"])
+    f1_b = float(bf_res["f1"])
+    p_b = float(bf_res["precision"])
+    r_b = float(bf_res["recall"])
+    thr_b = float(-bf_res["threshold"])
+    y_pred_bin = np.asarray(pot_res["pred"]).astype(int)
+    ev = event_f1_and_delay(y_eval, y_pred_bin)
+    return {
+        "ap": float(ap),
+        "auroc": float(auroc),
+        "f1_pot": float(f1_pot),
+        "precision_pot": float(p_pot),
+        "recall_pot": float(r_pot),
+        "thr_pot": float(thr_pot),
+        "f1_best": float(f1_b),
+        "precision_best": float(p_b),
+        "recall_best": float(r_b),
+        "thr_best": float(thr_b),
+        "latency_best": float(bf_res["latency"]),
+        "latency_pot": float(pot_res["pot-latency"]),
+        "event_f1": float(ev["event_f1"]),
+        "event_precision": float(ev["event_precision"]),
+        "event_recall": float(ev["event_recall"]),
+        "delay_mean": float(ev["delay_mean"]),
+        "delay_median": float(ev["delay_median"]),
+    }
+
+
+def _evaluate_omni_arch_on_raw_source(
+    arch,
+    *,
+    in_ch,
+    x_train_inner,
+    x_val_inner,
+    x_train_full,
+    x_test,
+    y_test_aligned,
+    device,
+    args,
+    pot_q,
+    pot_level,
+):
+    model = OmniAnomalyModel(in_ch, arch).to(device)
+    search_log = train_omni_source(
+        model,
+        x_train_inner,
+        x_val_inner,
+        device=device,
+        arch=arch,
+        epochs=args.omni_epochs,
+        patience=args.omni_patience,
+    )
+    val_stats = validate_omni_on_series(
+        model,
+        x_val_inner,
+        device=device,
+        batch_size=arch.batch_size,
+        window_length=arch.window_length,
+        stride=arch.stride,
+        n_z=arch.test_n_z,
+    )
+
+    final_model = OmniAnomalyModel(in_ch, arch).to(device)
+    final_model.load_state_dict({k: v.detach().cpu().clone() for k, v in model.state_dict().items()})
+    final_log = train_omni_source(
+        final_model,
+        x_train_full,
+        None,
+        device=device,
+        arch=arch,
+        epochs=args.omni_final_epochs,
+        patience=max(2, args.omni_patience),
+    )
+
+    scores_train = score_omni_series(
+        final_model,
+        x_train_full,
+        device=device,
+        batch_size=arch.batch_size,
+        window_length=arch.window_length,
+        stride=arch.stride,
+        n_z=arch.test_n_z,
+    )
+    scores_test = score_omni_series(
+        final_model,
+        x_test,
+        device=device,
+        batch_size=arch.batch_size,
+        window_length=arch.window_length,
+        stride=arch.stride,
+        n_z=arch.test_n_z,
+    )
+
+    return {
+        "arch": arch,
+        "val_stats": val_stats,
+        "search_log": search_log,
+        "final_log": final_log,
+        "scores_train": scores_train,
+        "scores_test": scores_test,
+        "metrics_uad": _omni_metrics_from_scores(
+            y_test_aligned,
+            scores_test,
+            scores_train,
+            pot_q=pot_q,
+            pot_level=pot_level,
+        ),
+    }
+
+
+def run_omni_uad_source_family_raw(*, raw_smd_root, machine, device, args):
+    machine_data = RawSMDMachine.from_root(
+        raw_smd_root,
+        machine,
+        preprocess_mode=args.omni_preprocess,
+    )
+    if args.omni_train_limit and args.omni_train_limit > 0:
+        machine_data.x_train = machine_data.x_train[:args.omni_train_limit]
+    if args.omni_test_limit and args.omni_test_limit > 0:
+        machine_data.x_test = machine_data.x_test[:args.omni_test_limit]
+        machine_data.y_test = machine_data.y_test[:args.omni_test_limit]
+    in_ch = machine_data.x_train.shape[-1]
+
+    fixed_arch = get_fixed_paper_omni_arch(window_length=args.omni_window_length)
+    fixed_arch = replace(
+        fixed_arch,
+        batch_size=args.omni_batch_size,
+        max_epoch=args.omni_epochs,
+        lr=args.omni_lr,
+        valid_ratio=args.omni_valid_ratio,
+        stride=args.omni_stride,
+        test_n_z=args.omni_test_n_z,
+    )
+
+    x_train_inner, x_val_inner = contiguous_train_valid_split(
+        machine_data.x_train,
+        valid_ratio=fixed_arch.valid_ratio,
+    )
+    y_test_aligned = aligned_last_point_labels(
+        machine_data.y_test,
+        window_length=fixed_arch.window_length,
+        stride=fixed_arch.stride,
+    )
+    omni_ref = resolve_omni_reference_settings(machine, args)
+
+    print("[OMNI RAW INPUT]")
+    print("  machine     :", machine)
+    print("  train raw   :", machine_data.x_train.shape)
+    print("  test raw    :", machine_data.x_test.shape)
+    print("  labels test :", machine_data.y_test.shape, "aligned:", y_test_aligned.shape)
+    print("  window      :", fixed_arch.window_length, "stride:", fixed_arch.stride)
+    print("  omni ref    :", omni_ref["reference"], "| group:", omni_ref["group"])
+    print("  POT q/level :", omni_ref["pot_q"], omni_ref["pot_level"])
+    print("  preprocess  :", args.omni_preprocess)
+
+    print("\n[FIXED BASELINE] OmniAnomaly paper-faithful fixed architecture...")
+    fixed_eval = _evaluate_omni_arch_on_raw_source(
+        fixed_arch,
+        in_ch=in_ch,
+        x_train_inner=x_train_inner,
+        x_val_inner=x_val_inner,
+        x_train_full=machine_data.x_train,
+        x_test=machine_data.x_test,
+        y_test_aligned=y_test_aligned,
+        device=device,
+        args=args,
+        pot_q=omni_ref["pot_q"],
+        pot_level=omni_ref["pot_level"],
+    )
+
+    if getattr(args, "omni_fixed_only", False):
+        return {
+            "mode": "uad_source",
+            "family": "omni_anomaly",
+            "protocol": "raw_smd_machine_by_machine",
+            "machine": machine,
+            "raw_smd_root": str(raw_smd_root),
+            "best_arch": str(fixed_arch),
+            "search_history": [],
+            "omni_family_notes": {
+                "target": "paper_faithful_source_only",
+                "scoring": "negative_last_point_reconstruction_log_probability",
+                "posterior_flow": "planar_nf",
+                "ts_tcc": "disabled_for_omni_family",
+                "deepsvdd": "disabled_for_omni_family",
+                "omni_reference": omni_ref["reference"],
+                "omni_group": omni_ref["group"],
+                "pot_q": omni_ref["pot_q"],
+                "pot_level": omni_ref["pot_level"],
+                "pot_q_source": omni_ref["pot_q_source"],
+                "pot_level_source": omni_ref["pot_level_source"],
+                "preprocess_mode": args.omni_preprocess,
+                "fixed_only": True,
+            },
+            "fixed_baseline": {
+                "arch": str(fixed_arch),
+                "metrics_uad": fixed_eval["metrics_uad"],
+                "val_stats": fixed_eval["val_stats"],
+                "search_train_curve": fixed_eval["search_log"],
+                "final_train_curve": fixed_eval["final_log"],
+            },
+            "searched_partial_nas": None,
+            "metrics_uad": fixed_eval["metrics_uad"],
+        }
+
+    N_ITERS = max(1, int(args.omni_search_iters))
+    history = []
+    best_obj = float("inf")
+    best_arch = None
+    best_eval = None
+
+    for iter_id in range(N_ITERS):
+        print(f"\n[ITER {iter_id+1}/{N_ITERS}] OMNI UAD_SOURCE partial NAS on raw SMD...")
+        for i in range(args.search_candidates):
+            arch_c = sample_omni_arch(window_length=args.omni_window_length)
+            arch_c = replace(
+                arch_c,
+                batch_size=args.omni_batch_size,
+                max_epoch=args.omni_epochs,
+                lr=args.omni_lr,
+                valid_ratio=args.omni_valid_ratio,
+                stride=args.omni_stride,
+                test_n_z=args.omni_test_n_z,
+            )
+            eval_out = _evaluate_omni_arch_on_raw_source(
+                arch_c,
+                in_ch=in_ch,
+                x_train_inner=x_train_inner,
+                x_val_inner=x_val_inner,
+                x_train_full=machine_data.x_train,
+                x_test=machine_data.x_test,
+                y_test_aligned=y_test_aligned,
+                device=device,
+                args=args,
+                pot_q=omni_ref["pot_q"],
+                pot_level=omni_ref["pot_level"],
+            )
+            obj = float(eval_out["val_stats"]["val_score_last"])
+            history.append({
+                "iter": iter_id + 1,
+                "arch": str(arch_c),
+                "objective": obj,
+                "val_loss": float(eval_out["val_stats"]["val_loss"]),
+                "val_score_last": float(eval_out["val_stats"]["val_score_last"]),
+            })
+            print(f"  Candidate {i+1}/{args.search_candidates}: obj(val_score_last)={obj:.6f}")
+
+            if obj < best_obj:
+                best_obj = obj
+                best_arch = arch_c
+                best_eval = eval_out
+
+    if best_arch is None or best_eval is None:
+        raise RuntimeError("omni_anomaly/uad_source/raw: best_arch is None after search.")
+
+    print(f"\n[OMNI SEARCH DONE] Best partial-NAS arch = {best_arch} | best_obj={best_obj:.6f}")
+
+    return {
+        "mode": "uad_source",
+        "family": "omni_anomaly",
+        "protocol": "raw_smd_machine_by_machine",
+        "machine": machine,
+        "raw_smd_root": str(raw_smd_root),
+        "best_arch": str(best_arch),
+        "search_history": history,
+        "omni_family_notes": {
+            "target": "paper_faithful_source_only",
+            "scoring": "negative_last_point_reconstruction_log_probability",
+            "posterior_flow": "planar_nf",
+            "ts_tcc": "disabled_for_omni_family",
+            "deepsvdd": "disabled_for_omni_family",
+            "omni_reference": omni_ref["reference"],
+            "omni_group": omni_ref["group"],
+            "pot_q": omni_ref["pot_q"],
+            "pot_level": omni_ref["pot_level"],
+            "pot_q_source": omni_ref["pot_q_source"],
+            "pot_level_source": omni_ref["pot_level_source"],
+            "preprocess_mode": args.omni_preprocess,
+        },
+        "fixed_baseline": {
+            "arch": str(fixed_arch),
+            "metrics_uad": fixed_eval["metrics_uad"],
+            "val_stats": fixed_eval["val_stats"],
+            "search_train_curve": fixed_eval["search_log"],
+            "final_train_curve": fixed_eval["final_log"],
+        },
+        "searched_partial_nas": {
+            "arch": str(best_arch),
+            "metrics_uad": best_eval["metrics_uad"],
+            "val_stats": best_eval["val_stats"],
+            "search_train_curve": best_eval["search_log"],
+            "final_train_curve": best_eval["final_log"],
+        },
+        "metrics_uad": best_eval["metrics_uad"],
+    }
+
+
 # ========================= Main =========================
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_or_paths", required=True,
+    parser.add_argument("--dataset_or_paths", default=None,
                         help=(
                             "uad_source: train_normal.npz,val_mixed.npz[,test_mixed.npz] | "
                             "adaptnas_combined: train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz[,test_mixed.npz]"
                         ))
+    parser.add_argument("--raw_smd_root", default="data/ServerMachineDataset",
+                        help="Official raw SMD root with train/test/test_label folders. Used by family=omni_anomaly.")
+    parser.add_argument("--machine", default=None,
+                        help="Machine id like machine-1-1. Used by family=omni_anomaly.")
     parser.add_argument("--epochs_pretrain", type=int, default=10)
     parser.add_argument("--search_candidates", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=64)
@@ -852,6 +1254,36 @@ def main():
             "uad_source: UAD input, source-only (train_normal) SVDD objective NAS; final DeepSVDD scoring."
         ),
     )
+    parser.add_argument(
+        "--family",
+        type=str,
+        default="default_nasade",
+        choices=["default_nasade", "omni_anomaly"],
+        help=(
+            "default_nasade: current CNN/Transformer-GRU-TCN + TS-TCC/SVDD pipeline.\n"
+            "omni_anomaly: paper-faithful OmniAnomaly family for raw SMD source-only runs."
+        ),
+    )
+    parser.add_argument("--omni_epochs", type=int, default=20)
+    parser.add_argument("--omni_final_epochs", type=int, default=20)
+    parser.add_argument("--omni_lr", type=float, default=1e-3)
+    parser.add_argument("--omni_patience", type=int, default=5)
+    parser.add_argument("--omni_window_length", type=int, default=100)
+    parser.add_argument("--omni_valid_ratio", type=float, default=0.3)
+    parser.add_argument("--omni_batch_size", type=int, default=50)
+    parser.add_argument("--omni_stride", type=int, default=1)
+    parser.add_argument("--omni_test_n_z", type=int, default=1)
+    parser.add_argument("--omni_search_iters", type=int, default=3)
+    parser.add_argument("--omni_train_limit", type=int, default=0)
+    parser.add_argument("--omni_test_limit", type=int, default=0)
+    parser.add_argument("--omni_reference", type=str, default="paper", choices=["paper", "repo"])
+    parser.add_argument("--omni_preprocess", type=str, default="official_minmax",
+                        choices=["official_minmax", "train_zscore"])
+    parser.add_argument("--omni_fixed_only", action="store_true")
+    parser.add_argument("--omni_pot_q", type=float, default=0.0,
+                        help="Override POT q. If <= 0, infer from --omni_reference.")
+    parser.add_argument("--omni_pot_level", type=float, default=0.0,
+                        help="Override POT level/low-quantile. If <= 0, infer from machine group and --omni_reference.")
     args = parser.parse_args()
 
     set_global_seed(42)
@@ -860,6 +1292,28 @@ def main():
     os.makedirs("outputs/checkpoints", exist_ok=True)
 
     device = args.device
+
+    if args.family == "omni_anomaly":
+        if args.mode != "uad_source":
+            raise NotImplementedError("family=omni_anomaly is currently implemented only for mode=uad_source.")
+        if not args.machine:
+            raise ValueError("family=omni_anomaly requires --machine, e.g. --machine machine-1-1")
+
+        print("[INFO] Family = omni_anomaly (paper-faithful source-only path).")
+        res = run_omni_uad_source_family_raw(
+            raw_smd_root=args.raw_smd_root,
+            machine=args.machine,
+            device=device,
+            args=args,
+        )
+        os.makedirs("outputs", exist_ok=True)
+        with open("outputs/results.json", "w", encoding="utf-8") as f:
+            json.dump(res, f, indent=2, ensure_ascii=False)
+        print("\n[OK] Saved outputs/results.json")
+        return
+
+    if not args.dataset_or_paths:
+        raise ValueError("--dataset_or_paths is required for family=default_nasade")
 
     def load_Xy(npz_path):
         X, y = load_npz_if_exists(npz_path)
