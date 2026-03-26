@@ -1,0 +1,80 @@
+{
+  "rows": [
+    {
+      "machine": "machine-1-1",
+      "fixed_baseline": {
+        "ap": 0.0,
+        "auroc": 0.5,
+        "f1_pot": 0.0,
+        "precision_pot": 0.0,
+        "recall_pot": 0.0,
+        "thr_pot": 228.7485188221552,
+        "f1_best": 0.0,
+        "precision_best": 0.0,
+        "recall_best": 0.0,
+        "thr_best": 4621.83411816597,
+        "latency_best": 0.0,
+        "latency_pot": 0.0,
+        "event_f1": 0.0,
+        "event_precision": 0.0,
+        "event_recall": 0.0,
+        "delay_mean": null,
+        "delay_median": null
+      },
+      "searched_partial_nas": {
+        "ap": 0.0,
+        "auroc": 0.5,
+        "f1_pot": 0.0,
+        "precision_pot": 0.0,
+        "recall_pot": 0.0,
+        "thr_pot": 183.0537837246534,
+        "f1_best": 0.0,
+        "precision_best": 0.0,
+        "recall_best": 0.0,
+        "thr_best": 2667.653636894226,
+        "latency_best": 0.0,
+        "latency_pot": 0.0,
+        "event_f1": 0.0,
+        "event_precision": 0.0,
+        "event_recall": 0.0,
+        "delay_mean": null,
+        "delay_median": null
+      },
+      "delta_searched_minus_fixed": {
+        "ap": 0.0,
+        "auroc": 0.0,
+        "f1_best": 0.0,
+        "f1_pot": 0.0,
+        "event_f1": 0.0,
+        "delay_mean": null
+      }
+    }
+  ],
+  "macro": {
+    "num_machines": 1,
+    "fixed_baseline_mean": {
+      "ap": 0.0,
+      "auroc": 0.5,
+      "f1_best": 0.0,
+      "f1_pot": 0.0,
+      "event_f1": 0.0,
+      "delay_mean": null
+    },
+    "searched_partial_nas_mean": {
+      "ap": 0.0,
+      "auroc": 0.5,
+      "f1_best": 0.0,
+      "f1_pot": 0.0,
+      "event_f1": 0.0,
+      "delay_mean": null
+    },
+    "delta_mean": {
+      "ap": 0.0,
+      "auroc": 0.0,
+      "f1_best": 0.0,
+      "f1_pot": 0.0,
+      "event_f1": 0.0,
+      "delay_mean": null
+    }
+  }
+}

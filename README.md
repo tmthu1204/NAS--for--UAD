@@ -11,6 +11,11 @@ The current codebase supports two modes:
 - `uad_source`: source-only UAD using `train_normal` and DeepSVDD scoring
 - `adaptnas_combined`: source-normal plus unlabeled target-pool adaptation with reliability-aware weighting
 
+It also now supports multiple model families:
+
+- `default_nasade`: the current TS-TCC + CNN/Transformer-GRU-TCN + DeepSVDD / AdaptNAS pipeline
+- `omni_anomaly`: paper-faithful OmniAnomaly family for raw SMD machine-by-machine source-only runs
+
 ## What Is Implemented
 
 The current implementation now aligns with the intended project design in three important ways:
@@ -24,6 +29,8 @@ The current implementation now aligns with the intended project design in three 
 ```text
 src/
   pipeline.py                # main end-to-end entrypoint
+  data/
+    omni_smd.py              # raw SMD loader + sliding-window helpers for Omni family
   adaptnas/
     search_space.py          # discrete search space sampling
     trainer.py               # bilevel training loop
@@ -76,6 +83,31 @@ Verify that CUDA is available:
 
 `run.ps1` defaults to `-Device auto`, so once CUDA is available it will automatically run on GPU.
 
+## Family Selection
+
+The pipeline now separates:
+
+- `mode`: training/search protocol
+- `family`: model/loss/scoring family
+
+Current families:
+
+- `default_nasade`
+- `omni_anomaly`
+
+Current Omni family scope:
+
+- implemented only for `uad_source`
+- skips TS-TCC pretraining
+- skips DeepSVDD
+- runs on raw SMD `train/test/test_label` machine-by-machine
+- uses sliding-window last-point reconstruction scoring
+- includes planar normalizing flows in the posterior path
+- supports Monte Carlo test-time scoring via `--omni_test_n_z`
+- uses Omni-style adjusted best-F1 / POT-like evaluation on normal-score thresholds
+
+For paper-faithful Omni runs, prefer raw SMD over the `.npz` UAD protocol.
+
 ## Dataset Protocols
 
 ### 1. `uad_source`
@@ -112,6 +144,19 @@ train_normal.npz,val_mixed.npz,test_mixed.npz
 In that fallback, `val_mixed` is reused as the target pool and a warning is printed.
 
 ## Data Preparation
+
+### Raw SMD for `family=omni_anomaly`
+
+The paper-faithful Omni family reads the official raw SMD layout directly:
+
+```text
+data/ServerMachineDataset/
+  train/
+  test/
+  test_label/
+```
+
+You do not need to build `train_normal.npz` / `val_mixed.npz` / `test_mixed.npz` for this family.
 
 ### Raw SMD to windowed `source.npz` / `target.npz`
 
@@ -230,6 +275,7 @@ If you use `run.ps1`, the script now defaults to `-Device auto` and falls back t
 python -m src.pipeline \
   --dataset_or_paths data/smd/machine-1-1/train_normal.npz,data/smd/machine-1-1/val_mixed.npz,data/smd/machine-1-1/test_mixed.npz \
   --mode uad_source \
+  --family default_nasade \
   --epochs_pretrain 50 \
   --search_candidates 20 \
   --batch_size 128 \
@@ -242,9 +288,25 @@ python -m src.pipeline \
 python -m src.pipeline \
   --dataset_or_paths data/smd/machine-1-1/train_normal.npz,data/smd/machine-1-1/target_pool_unlabeled.npz,data/smd/machine-1-1/val_mixed.npz,data/smd/machine-1-1/test_mixed.npz \
   --mode adaptnas_combined \
+  --family default_nasade \
   --epochs_pretrain 50 \
   --search_candidates 20 \
   --batch_size 128 \
+  --device cuda
+```
+
+### OmniAnomaly family in source mode
+
+```bash
+python -m src.pipeline \
+  --mode uad_source \
+  --family omni_anomaly \
+  --raw_smd_root data/ServerMachineDataset \
+  --machine machine-1-1 \
+  --search_candidates 20 \
+  --omni_window_length 100 \
+  --omni_batch_size 50 \
+  --omni_test_n_z 1 \
   --device cuda
 ```
 
@@ -253,13 +315,29 @@ python -m src.pipeline \
 Temporal-shift example:
 
 ```powershell
-.\run.ps1 -Mode uad_source -DataDir data\smd_experiments\temporal_medium\machine-1-1
+.\run.ps1 -Mode uad_source -Family default_nasade -DataDir data\smd_experiments\temporal_medium\machine-1-1
 ```
 
 Cross-machine example:
 
 ```powershell
-.\run.ps1 -Mode adaptnas_combined -DataDir data\smd_experiments\cross_machine_medium\machine-1-1__to__machine-1-2
+.\run.ps1 -Mode adaptnas_combined -Family default_nasade -DataDir data\smd_experiments\cross_machine_medium\machine-1-1__to__machine-1-2
+```
+
+OmniAnomaly family example:
+
+```powershell
+.\run.ps1 -Mode uad_source -Family omni_anomaly -RawSmdRoot data\ServerMachineDataset -Machine machine-1-1
+```
+
+Batch-run a few raw SMD machines with the Omni family:
+
+```bash
+python scripts/run_all_smd.py \
+  --mode uad_source \
+  --family omni_anomaly \
+  --raw_smd_root data/ServerMachineDataset \
+  --machines machine-1-1,machine-1-2
 ```
 
 ## End-to-End Flow
@@ -295,6 +373,20 @@ For each sampled architecture:
 4. Select the architecture with the smallest validation compactness objective
 
 Final anomaly scores are SVDD distances on the selected architecture.
+
+### `uad_source` with `family=omni_anomaly`
+
+For each raw SMD machine:
+
+1. Load raw `train`, `test`, and `test_label`
+2. Normalize using train statistics only
+3. Split raw train contiguously into inner-train / inner-validation
+4. Train the fixed paper-faithful Omni baseline
+5. Sample partial-NAS Omni architectures around the fixed baseline
+6. Select by smallest validation anomaly score on the inner-validation series
+7. Refit/evaluate on the full raw train / raw test machine split
+
+Final anomaly scores are the negative last-point reconstruction log-probabilities on sliding windows with last-point alignment.
 
 ### `adaptnas_combined`
 
@@ -359,6 +451,8 @@ If `target_pool_unlabeled.npz` exists, the batch runner uses the 4-file protocol
 
 - A working Python environment is required; this repository does not bundle one.
 - `scripts/run_pipeline.sh` and `scripts/run_all_smd.py` now use the current CLI based on `--mode`.
+- `omni_anomaly` currently supports paper-faithful `uad_source` on raw SMD machine-by-machine runs.
+- `omni_anomaly` does not yet support `adaptnas_combined`.
 - Combined mode is most meaningful when `target_pool_unlabeled` is separated from `val_mixed` and `test_mixed`.
 - For domain-shift experiments, prefer the new `data/smd_experiments/...` folders instead of overwriting the original `data/smd/machine-*` directories.
 - Cross-machine experiments are a valid domain-shift setting in SMD because the feature schema is aligned, while the machine operating distributions can differ substantially.
