@@ -14,7 +14,7 @@
 
 \usepackage{graphicx}
 \usepackage{float}
-\usepackage{floatrow}
+\usepackage{longtable}
 \usepackage{tabularx}
 \usepackage{array}
 \usepackage{caption}
@@ -22,8 +22,10 @@
 \usepackage{titlesec}
 \usepackage{indentfirst}
 \usepackage{fancyhdr}
-\usepackage{url}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{xurl}
 \usepackage{booktabs}
+\usepackage[unicode,colorlinks=true,linkcolor=NavyBlue,citecolor=NavyBlue,urlcolor=Blue]{hyperref}
 
 \makeatletter
 \renewcommand\normalsize{%
@@ -47,26 +49,30 @@
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0pt}
 \captionsetup{font=normalsize,labelfont=bf,labelsep=period}
-\captionsetup[table]{position=top}
+\captionsetup[table]{position=top,name=Bảng}
+\captionsetup[longtable]{position=top,name=Bảng}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\refname}{Tài liệu tham khảo}
+\urlstyle{same}
 
 \titleformat*{\section}{\Large\bfseries}
 \titleformat*{\subsection}{\large\bfseries}
-\newfloatcommand{capbtabbox}{table}[][\FBwidth]
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
 \begin{document}
 
-\begin{figure}[H]
-    \begin{floatrow}
-        \ffigbox{%
-            \IfFileExists{logo.png}{\includegraphics[scale=.4]{logo.png}}{}
-        }{}
-        \capbtabbox{%
-            \begin{tabular}{l}
-                \multicolumn{1}{c}{\textbf{\begin{tabular}[c]{@{}c@{}}TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN\\KHOA CÔNG NGHỆ THÔNG TIN\end{tabular}}} \\ \\ \\
-            \end{tabular}
-        }{}
-    \end{floatrow}
-\end{figure}
+\begin{center}
+\begin{minipage}[c]{0.38\textwidth}
+    \centering
+    \IfFileExists{logo.png}{\includegraphics[width=\linewidth,keepaspectratio]{logo.png}}{}
+\end{minipage}
+\hfill
+\begin{minipage}[c]{0.58\textwidth}
+    \centering
+    \textbf{\normalsize TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN}\\[0.15cm]
+    \textbf{\normalsize KHOA CÔNG NGHỆ THÔNG TIN}
+\end{minipage}
+\end{center}
 
 \begin{center}
     \textbf{\Large ĐỀ CƯƠNG KHOÁ LUẬN TỐT NGHIỆP}
@@ -100,6 +106,7 @@
     \item \textbf{Thời gian thực hiện:} Từ \textit{tháng 4/năm 2025} đến \textit{tháng 7/năm 2026}
 \end{itemize}
 
+\thispagestyle{empty}
 \pagebreak
 
 \section{NỘI DUNG THỰC HIỆN}
@@ -156,14 +163,26 @@ Về ý nghĩa thực tiễn, kết quả của đề tài có thể tạo nền
 
 Kế hoạch thực hiện dự kiến được tổ chức theo các giai đoạn sau:
 
-\begin{table}[H]
-\centering
-\caption{Kế hoạch thực hiện đề tài}
-\renewcommand{\arraystretch}{1.4}
-\begin{tabularx}{\textwidth}{|p{2.1cm}|X|p{2.5cm}|p{3.2cm}|}
+Việc phân công công việc giữa các thành viên được thể hiện trong Bảng~\ref{tab:ke-hoach}.
+
+\setlength{\LTpre}{0pt}
+\setlength{\LTpost}{0pt}
+\renewcommand{\arraystretch}{1.35}
+\begin{longtable}{|L{2.2cm}|L{5.2cm}|L{2.4cm}|L{4.0cm}|}
+\caption{Kế hoạch thực hiện đề tài}\label{tab:ke-hoach}\\
 \hline
 \textbf{Thời gian} & \textbf{Nội dung công việc} & \textbf{Người phụ trách chính} & \textbf{Kết quả dự kiến} \\
 \hline
+\endfirsthead
+
+\hline
+\textbf{Thời gian} & \textbf{Nội dung công việc} & \textbf{Người phụ trách chính} & \textbf{Kết quả dự kiến} \\
+\hline
+\endhead
+
+\hline
+\endfoot
+
 04/2025 -- 06/2025 & Khảo sát tài liệu về phát hiện bất thường trên chuỗi thời gian, học biểu diễn tự giám sát, học một lớp và tìm kiếm kiến trúc mạng nơ-ron có thích nghi miền; xác định bài toán và hướng tiếp cận tổng quát & Cả nhóm & Cơ sở lý thuyết và định hướng nghiên cứu cho đề tài \\
 \hline
 07/2025 -- 09/2025 & Chuẩn hóa dữ liệu, xác lập giao thức thực nghiệm trên các bộ dữ liệu lựa chọn và hoàn thiện bước tiền xử lý & Mai Đức Vân & Bộ dữ liệu và giao thức đánh giá sẵn sàng cho nghiên cứu \\
@@ -178,8 +197,7 @@ Kế hoạch thực hiện dự kiến được tổ chức theo các giai đo�
 \hline
 07/2026 & Hoàn thiện báo cáo khóa luận, chỉnh sửa bản thảo và chuẩn bị bảo vệ & Cả nhóm & Báo cáo hoàn chỉnh và tài liệu bảo vệ \\
 \hline
-\end{tabularx}
-\end{table}
+\end{longtable}
 
 \pagebreak
 \bibliographystyle{ieeetr}
@@ -189,56 +207,67 @@ Kế hoạch thực hiện dự kiến được tổ chức theo các giai đo�
 V. Chandola, A. Banerjee, and V. Kumar,
 ``Anomaly detection: A survey,''
 \textit{ACM Computing Surveys}, vol. 41, no. 3, pp. 15:1--15:58, 2009.
+Available: \url{https://doi.org/10.1145/1541880.1541882}.
 
 \bibitem{usad}
 J. Audibert, P. Michiardi, F. Guyard, S. Marti, and M. A. Zuluaga,
 ``USAD: UnSupervised Anomaly Detection on Multivariate Time Series,''
 in \textit{Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}, 2020, pp. 3395--3404.
+Available: \url{https://doi.org/10.1145/3394486.3403392}.
 
 \bibitem{omnianomaly}
 Y. Su, Y. Zhao, C. Niu, R. Liu, W. Sun, and D. Pei,
 ``Robust Anomaly Detection for Multivariate Time Series through Stochastic Recurrent Neural Network,''
 in \textit{Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}, 2019, pp. 2828--2837.
+Available: \url{https://doi.org/10.1145/3292500.3330672}.
 
 \bibitem{dagmm}
 B. Zong, Q. Song, M. R. Min, W. Cheng, C. Lumezanu, D. Cho, and H. Chen,
 ``Deep Autoencoding Gaussian Mixture Model for Unsupervised Anomaly Detection,''
 in \textit{International Conference on Learning Representations}, 2018.
+Available: \url{https://openreview.net/forum?id=BJJLHbb0-}.
 
 \bibitem{tstcc}
 E. Eldele, M. Ragab, Z. Chen, M. Wu, C. K. Kwoh, X. Li, and C. Guan,
 ``Time-Series Representation Learning via Temporal and Contextual Contrasting,''
 in \textit{Proceedings of the Thirtieth International Joint Conference on Artificial Intelligence}, 2021, pp. 2352--2359.
+Available: \url{https://doi.org/10.24963/ijcai.2021/324}.
 
 \bibitem{deepsvdd}
 L. Ruff, R. Vandermeulen, N. Goernitz, L. Deecke, S. A. Siddiqui, A. Binder, E. Muller, and M. Kloft,
 ``Deep One-Class Classification,''
 in \textit{Proceedings of the 35th International Conference on Machine Learning}, 2018, pp. 4393--4402.
+Available: \url{https://proceedings.mlr.press/v80/ruff18a.html}.
 
 \bibitem{adaptnas}
 Y. Li, Z. Yang, Y. Wang, and C. Xu,
 ``Adapting Neural Architectures Between Domains,''
 in \textit{Advances in Neural Information Processing Systems 33}, 2020.
+Available: \url{https://papers.nips.cc/paper/2020/hash/08f38e0434442128fab5ead6217ca759-Abstract.html}.
 
 \bibitem{anomaly_transformer}
 J. Xu, H. Wu, J. Wang, and M. Long,
 ``Anomaly Transformer: Time Series Anomaly Detection with Association Discrepancy,''
 in \textit{International Conference on Learning Representations}, 2022.
+Available: \url{https://openreview.net/forum?id=LzQQ89U1qm_}.
 
 \bibitem{tranad}
 S. Tuli, G. Casale, and N. R. Jennings,
 ``TranAD: Deep Transformer Networks for Anomaly Detection in Multivariate Time Series Data,''
 \textit{Proceedings of the VLDB Endowment}, vol. 15, no. 6, pp. 1201--1214, 2022.
+Available: \url{https://doi.org/10.14778/3514061.3514067}.
 
 \bibitem{pasta}
 P. Trirat and J.-G. Lee,
 ``PASTA: Neural Architecture Search for Anomaly Detection in Multivariate Time Series,''
 \textit{IEEE Transactions on Emerging Topics in Computational Intelligence}, vol. 9, no. 4, pp. 2924--2939, 2025.
+Available: \url{https://doi.org/10.1109/TETCI.2024.3508845}.
 
 \bibitem{spacecraft}
 K. Hundman, V. Constantinou, C. Laporte, I. Colwell, and T. Soderstrom,
 ``Detecting Spacecraft Anomalies Using LSTMs and Nonparametric Dynamic Thresholding,''
 in \textit{Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}, 2018, pp. 387--395.
+Available: \url{https://doi.org/10.1145/3219819.3219845}.
 
 \end{thebibliography}
 
