@@ -1,0 +1,120 @@
+D:\Papers\NAS--for--UAD\src\pipeline.py:503: RuntimeWarning: overflow encountered in exp
+  w = 1.0 / (1.0 + np.exp(z / max(1e-8, tau)))
+D:\Papers\NAS--for--UAD\src\pipeline.py:503: RuntimeWarning: overflow encountered in exp
+  w = 1.0 / (1.0 + np.exp(z / max(1e-8, tau)))
+[UAD INPUT]
+  train_normal: (369, 128, 38) y: yes
+  target_pool : (73, 128, 38) y: no/ignored
+  val_mixed   : (42, 128, 38) y: yes
+  test_mixed  : (97, 128, 38) y: yes
+[INFO] Normalizing window size to 128...
+[INFO] TS-TCC pretraining ...
+[INFO] TS-TCC pretraining on train_normal + target_pool_unlabeled: 442 windows.
+>>> Training TS-TCC ...
+[Epoch 1] Train Loss=9.2699, Train Acc=0.0000
+[Epoch 2] Train Loss=7.7254, Train Acc=0.0000
+[Epoch 3] Train Loss=7.0410, Train Acc=0.0000
+>>> TS-TCC training finished.
+
+
+[ITER 1/3] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...
+    [W] w_ent stats: mean=0.4043 min=0.0500 max=0.6069
+[BiLevel] step 20/80 | train_loss=-0.4260 | upper_obj=0.3985 (src=1.1904, tgt=0.0406, gap=0.0129)
+[BiLevel] step 40/80 | train_loss=-0.3709 | upper_obj=0.5366 (src=1.3128, tgt=0.0423, gap=0.1131)
+[BiLevel] step 60/80 | train_loss=-0.4312 | upper_obj=0.6495 (src=1.4175, tgt=0.0053, gap=0.2206)
+[BiLevel] step 80/80 | train_loss=-0.4985 | upper_obj=0.6809 (src=1.5290, tgt=0.0059, gap=0.2180)
+  Candidate 1/2: upper_obj=0.093617 (src=0.248823, tgt=0.025551, gap=0.001085)
+    [W] w_ent stats: mean=0.4392 min=0.0500 max=0.7757
+[BiLevel] step 20/80 | train_loss=-0.3708 | upper_obj=0.5602 (src=1.5560, tgt=0.0135, gap=0.0840)
+[BiLevel] step 40/80 | train_loss=-0.4278 | upper_obj=1.1005 (src=1.6214, tgt=0.0446, gap=0.5829)
+[BiLevel] step 60/80 | train_loss=-0.2167 | upper_obj=2.1711 (src=0.9570, tgt=0.0000, gap=1.8840)
+[BiLevel] step 80/80 | train_loss=-0.2079 | upper_obj=2.2231 (src=1.0247, tgt=0.0000, gap=1.9157)
+  Candidate 2/2: upper_obj=0.229718 (src=0.723489, tgt=0.000255, gap=0.012493)
+[ITER 1] ✅ Best iter arch = ArchConfig(enc_filters=[16, 16, 64], enc_kernels=[5, 3, 3], enc_strides=[1, 1, 1], enc_dilations=[2, 1, 1], enc_pool=None, enc_activation='relu', seq_type='transformer', seq_layers=1, seq_heads=2, seq_hidden=128, seq_kernel=3, seq_dilation=1, clf_layers=1, clf_units=64, d_model=128) | upper_obj=0.093617
+
+[ITER 2/3] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...
+    [W] w_ent stats: mean=0.4615 min=0.0500 max=0.7271
+[BiLevel] step 20/80 | train_loss=-1.8894 | upper_obj=9.5191 (src=19.0228, tgt=0.0023, gap=0.0065)
+[BiLevel] step 40/80 | train_loss=-4.2310 | upper_obj=5.9995 (src=11.9709, tgt=0.0141, gap=0.0070)
+[BiLevel] step 60/80 | train_loss=-5.3661 | upper_obj=5.2115 (src=10.4038, tgt=0.0111, gap=0.0040)
+[BiLevel] step 80/80 | train_loss=-5.6348 | upper_obj=4.5554 (src=9.0955, tgt=0.0088, gap=0.0032)
+  Candidate 1/2: upper_obj=3.099056 (src=6.124077, tgt=0.032865, gap=0.020584)
+    [W] w_ent stats: mean=0.4264 min=0.0500 max=0.6747
+[BiLevel] step 20/80 | train_loss=-0.9688 | upper_obj=0.1322 (src=0.2591, tgt=0.0008, gap=0.0022)
+[BiLevel] step 40/80 | train_loss=-0.8460 | upper_obj=0.2711 (src=0.4167, tgt=0.1050, gap=0.0102)
+[BiLevel] step 60/80 | train_loss=-0.8221 | upper_obj=0.4693 (src=0.8300, tgt=0.0425, gap=0.0331)
+[BiLevel] step 80/80 | train_loss=-0.7875 | upper_obj=0.5284 (src=0.9249, tgt=0.0418, gap=0.0450)
+  Candidate 2/2: upper_obj=0.178006 (src=0.313778, tgt=0.034732, gap=0.003751)
+[ITER 2] ✅ Best iter arch = ArchConfig(enc_filters=[16], enc_kernels=[3], enc_strides=[2], enc_dilations=[2], enc_pool=('max', 2), enc_activation='lrelu', seq_type='transformer', seq_layers=2, seq_heads=4, seq_hidden=64, seq_kernel=3, seq_dilation=1, clf_layers=3, clf_units=64, d_model=64) | upper_obj=0.178006
+
+[ITER 3/3] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...
+    [W] w_ent stats: mean=0.5048 min=0.0500 max=0.9803
+[BiLevel] step 20/80 | train_loss=-0.6974 | upper_obj=0.3752 (src=0.2858, tgt=0.5693, gap=0.0043)
+[BiLevel] step 40/80 | train_loss=-0.7580 | upper_obj=0.2800 (src=0.2959, tgt=0.1856, gap=0.0172)
+[BiLevel] step 60/80 | train_loss=-0.6595 | upper_obj=0.3612 (src=0.3621, tgt=0.0357, gap=0.0971)
+[BiLevel] step 80/80 | train_loss=-0.6090 | upper_obj=0.3421 (src=0.3104, tgt=0.0317, gap=0.1153)
+  Candidate 1/2: upper_obj=0.167174 (src=0.200917, tgt=0.077650, gap=0.003236)
+    [W] w_ent stats: mean=0.4609 min=0.0500 max=0.8944
+[BiLevel] step 20/80 | train_loss=-1.2046 | upper_obj=0.8645 (src=1.1909, tgt=0.0686, gap=0.0102)
+[BiLevel] step 40/80 | train_loss=-0.7714 | upper_obj=2.0812 (src=2.5850, tgt=0.1879, gap=0.2154)
+[BiLevel] step 60/80 | train_loss=-0.6319 | upper_obj=4.5907 (src=4.8229, tgt=0.1083, gap=1.1822)
+[BiLevel] step 80/80 | train_loss=-0.7278 | upper_obj=5.0016 (src=5.1921, tgt=0.0874, gap=1.3409)
+  Candidate 2/2: upper_obj=2.587090 (src=2.915008, tgt=0.073591, gap=0.524507)
+[ITER 3] ✅ Best iter arch = ArchConfig(enc_filters=[64, 16, 64], enc_kernels=[7, 3, 3], enc_strides=[2, 2, 2], enc_dilations=[1, 2, 1], enc_pool=None, enc_activation='relu', seq_type='gru', seq_layers=2, seq_heads=1, seq_hidden=128, seq_kernel=3, seq_dilation=1, clf_layers=1, clf_units=32, d_model=128) | upper_obj=0.167174
+
+[SEARCH DONE] ✅ Best OVERALL arch = ArchConfig(enc_filters=[16, 16, 64], enc_kernels=[5, 3, 3], enc_strides=[1, 1, 1], enc_dilations=[2, 1, 1], enc_pool=None, enc_activation='relu', seq_type='transformer', seq_layers=1, seq_heads=2, seq_hidden=128, seq_kernel=3, seq_dilation=1, clf_layers=1, clf_units=64, d_model=128) (iter 1) | best_upper_obj=0.093617
+[INFO] Final stage ...
+
+[FINAL-ONLY] Running: Base_CNN_GRU (eval on test_mixed)
+[FINAL-ONLY][Base_CNN_GRU] weights: mean=0.4436 min=0.0500 max=0.7177 | tau=1.0 w_min=0.05 nu=0.05
+[BiLevel] step 20/200 | train_loss=-0.7292 | upper_obj=1.2245 (src=1.3806, tgt=0.5134, gap=0.1040)
+[BiLevel] step 40/200 | train_loss=-0.7182 | upper_obj=0.9758 (src=1.2289, tgt=0.1716, gap=0.0641)
+[BiLevel] step 60/200 | train_loss=-0.7100 | upper_obj=1.1302 (src=1.2263, tgt=0.4404, gap=0.1397)
+[BiLevel] step 80/200 | train_loss=-0.6254 | upper_obj=1.6126 (src=1.9148, tgt=0.6685, gap=0.0717)
+[BiLevel] step 100/200 | train_loss=-0.4630 | upper_obj=1.4308 (src=1.5260, tgt=0.6918, gap=0.1551)
+[BiLevel] step 120/200 | train_loss=-0.5214 | upper_obj=1.4469 (src=1.5834, tgt=0.6927, gap=0.1307)
+[BiLevel] step 140/200 | train_loss=-0.6008 | upper_obj=1.4423 (src=1.5454, tgt=0.6922, gap=0.1529)
+[BiLevel] step 160/200 | train_loss=-0.6490 | upper_obj=1.3799 (src=1.5000, tgt=0.6563, gap=0.1330)
+[BiLevel] step 180/200 | train_loss=-0.7679 | upper_obj=1.4726 (src=1.6226, tgt=0.6913, gap=0.1294)
+[BiLevel] step 200/200 | train_loss=-0.7022 | upper_obj=1.4042 (src=1.5319, tgt=0.6914, gap=0.1245)
+
+[FINAL-ONLY] Running: Base_CNN_TCN (eval on test_mixed)
+[FINAL-ONLY][Base_CNN_TCN] weights: mean=0.4603 min=0.0500 max=0.6732 | tau=1.0 w_min=0.05 nu=0.05
+[BiLevel] step 20/200 | train_loss=-2.5741 | upper_obj=15.9127 (src=22.7200, tgt=0.0004, gap=0.0087)
+[BiLevel] step 40/200 | train_loss=-7.8344 | upper_obj=15.3880 (src=21.9727, tgt=0.0011, gap=0.0068)
+[BiLevel] step 60/200 | train_loss=-14.6476 | upper_obj=16.2546 (src=23.2107, tgt=0.0010, gap=0.0068)
+[BiLevel] step 80/200 | train_loss=-22.3669 | upper_obj=13.8169 (src=19.7291, tgt=0.0017, gap=0.0060)
+[BiLevel] step 100/200 | train_loss=-22.2567 | upper_obj=6.4284 (src=9.1775, tgt=0.0019, gap=0.0035)
+[BiLevel] step 120/200 | train_loss=-24.8099 | upper_obj=6.6333 (src=9.4503, tgt=0.0414, gap=0.0057)
+[BiLevel] step 140/200 | train_loss=-23.4729 | upper_obj=5.6186 (src=7.9873, tgt=0.0585, gap=0.0099)
+[BiLevel] step 160/200 | train_loss=-27.1328 | upper_obj=3.7367 (src=5.3042, tgt=0.0621, gap=0.0052)
+[BiLevel] step 180/200 | train_loss=-28.3342 | upper_obj=4.2312 (src=6.0136, tgt=0.0489, gap=0.0071)
+[BiLevel] step 200/200 | train_loss=-34.4812 | upper_obj=3.7173 (src=5.2947, tgt=0.0035, gap=0.0100)
+
+[FINAL-ONLY] Running: Base_CNN_TRF (eval on test_mixed)
+[FINAL-ONLY][Base_CNN_TRF] weights: mean=0.4143 min=0.0500 max=0.6056 | tau=1.0 w_min=0.05 nu=0.05
+[BiLevel] step 20/200 | train_loss=-0.9365 | upper_obj=0.9827 (src=1.3457, tgt=0.0443, gap=0.0274)
+[BiLevel] step 40/200 | train_loss=-0.7625 | upper_obj=1.1436 (src=0.9888, tgt=0.0298, gap=0.4425)
+[BiLevel] step 60/200 | train_loss=-1.0785 | upper_obj=1.1695 (src=0.6865, tgt=0.0000, gap=0.6890)
+[BiLevel] step 80/200 | train_loss=-0.9213 | upper_obj=1.1646 (src=0.7275, tgt=0.0001, gap=0.6553)
+[BiLevel] step 100/200 | train_loss=-1.0926 | upper_obj=1.3133 (src=0.9777, tgt=0.0005, gap=0.6288)
+[BiLevel] step 120/200 | train_loss=-1.0000 | upper_obj=0.8920 (src=0.4982, tgt=0.0005, gap=0.5431)
+[BiLevel] step 140/200 | train_loss=-0.9581 | upper_obj=0.7411 (src=0.4954, tgt=0.0011, gap=0.3940)
+[BiLevel] step 160/200 | train_loss=-0.9954 | upper_obj=0.7278 (src=0.4864, tgt=0.1004, gap=0.3572)
+[BiLevel] step 180/200 | train_loss=-1.0160 | upper_obj=0.7703 (src=0.4497, tgt=0.0007, gap=0.4553)
+[BiLevel] step 200/200 | train_loss=-0.9684 | upper_obj=0.7750 (src=0.4654, tgt=0.0005, gap=0.4491)
+
+[FINAL-ONLY] Running: NAS_BestArch (eval on test_mixed)
+[FINAL-ONLY][NAS_BestArch] weights: mean=0.4188 min=0.0500 max=0.7087 | tau=1.0 w_min=0.05 nu=0.05
+[BiLevel] step 20/200 | train_loss=-1.0267 | upper_obj=0.7673 (src=1.0600, tgt=0.0572, gap=0.0082)
+[BiLevel] step 40/200 | train_loss=-1.1057 | upper_obj=0.7303 (src=0.8894, tgt=0.0939, gap=0.0795)
+[BiLevel] step 60/200 | train_loss=-0.9098 | upper_obj=0.4807 (src=0.3916, tgt=0.0187, gap=0.2010)
+[BiLevel] step 80/200 | train_loss=-1.8578 | upper_obj=0.4523 (src=0.3380, tgt=0.0202, gap=0.2097)
+[BiLevel] step 100/200 | train_loss=-2.1714 | upper_obj=0.5618 (src=0.4787, tgt=0.0155, gap=0.2220)
+[BiLevel] step 120/200 | train_loss=-1.4494 | upper_obj=0.5475 (src=0.3180, tgt=0.0080, gap=0.3226)
+[BiLevel] step 140/200 | train_loss=-1.3472 | upper_obj=0.4434 (src=0.1571, tgt=0.0084, gap=0.3309)
+[BiLevel] step 160/200 | train_loss=-1.3610 | upper_obj=0.3914 (src=0.1361, tgt=0.2251, gap=0.2286)
+[BiLevel] step 180/200 | train_loss=-1.1858 | upper_obj=0.4382 (src=0.1277, tgt=0.0117, gap=0.3453)
+[BiLevel] step 200/200 | train_loss=-1.1998 | upper_obj=0.4369 (src=0.1361, tgt=0.0169, gap=0.3365)
+
+[OK] Saved outputs/results.json

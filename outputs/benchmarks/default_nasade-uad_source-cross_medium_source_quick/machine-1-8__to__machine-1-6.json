@@ -1,0 +1,63 @@
+{
+  "mode": "uad_source",
+  "best_arch": "ArchConfig(enc_filters=[64, 32], enc_kernels=[3, 7], enc_strides=[2, 1], enc_dilations=[2, 1], enc_pool=('avg', 2), enc_activation='lrelu', seq_type='tcn', seq_layers=2, seq_heads=1, seq_hidden=64, seq_kernel=3, seq_dilation=1, clf_layers=3, clf_units=32, d_model=128)",
+  "search_history": [
+    {
+      "iter": 1,
+      "arch": "ArchConfig(enc_filters=[16, 16, 64], enc_kernels=[5, 3, 3], enc_strides=[1, 1, 1], enc_dilations=[2, 1, 1], enc_pool=None, enc_activation='relu', seq_type='transformer', seq_layers=1, seq_heads=2, seq_hidden=128, seq_kernel=3, seq_dilation=1, clf_layers=1, clf_units=64, d_model=128)",
+      "svdd_obj": 0.012047008611261845,
+      "svdd_mean_dist2": 0.012047008611261845
+    },
+    {
+      "iter": 1,
+      "arch": "ArchConfig(enc_filters=[16], enc_kernels=[7], enc_strides=[2], enc_dilations=[2], enc_pool=('max', 2), enc_activation='relu', seq_type='transformer', seq_layers=2, seq_heads=2, seq_hidden=64, seq_kernel=3, seq_dilation=1, clf_layers=2, clf_units=32, d_model=128)",
+      "svdd_obj": 0.01870921067893505,
+      "svdd_mean_dist2": 0.01870921067893505
+    },
+    {
+      "iter": 2,
+      "arch": "ArchConfig(enc_filters=[64, 32], enc_kernels=[3, 7], enc_strides=[2, 1], enc_dilations=[2, 1], enc_pool=('avg', 2), enc_activation='lrelu', seq_type='tcn', seq_layers=2, seq_heads=1, seq_hidden=64, seq_kernel=3, seq_dilation=1, clf_layers=3, clf_units=32, d_model=128)",
+      "svdd_obj": 0.00012979899474885315,
+      "svdd_mean_dist2": 0.00012979899474885315
+    },
+    {
+      "iter": 2,
+      "arch": "ArchConfig(enc_filters=[16], enc_kernels=[3], enc_strides=[2], enc_dilations=[2], enc_pool=('max', 2), enc_activation='lrelu', seq_type='transformer', seq_layers=2, seq_heads=4, seq_hidden=64, seq_kernel=3, seq_dilation=1, clf_layers=3, clf_units=64, d_model=64)",
+      "svdd_obj": 0.01552497036755085,
+      "svdd_mean_dist2": 0.01552497036755085
+    },
+    {
+      "iter": 3,
+      "arch": "ArchConfig(enc_filters=[64, 16, 64], enc_kernels=[7, 3, 3], enc_strides=[2, 2, 2], enc_dilations=[1, 2, 1], enc_pool=None, enc_activation='relu', seq_type='gru', seq_layers=2, seq_heads=1, seq_hidden=128, seq_kernel=3, seq_dilation=1, clf_layers=1, clf_units=32, d_model=128)",
+      "svdd_obj": 0.00018822378478944302,
+      "svdd_mean_dist2": 0.00018822378478944302
+    },
+    {
+      "iter": 3,
+      "arch": "ArchConfig(enc_filters=[64], enc_kernels=[5], enc_strides=[2], enc_dilations=[2], enc_pool=None, enc_activation='lrelu', seq_type='transformer', seq_layers=1, seq_heads=4, seq_hidden=128, seq_kernel=3, seq_dilation=1, clf_layers=3, clf_units=64, d_model=128)",
+      "svdd_obj": 0.016274217516183853,
+      "svdd_mean_dist2": 0.016274217516183853
+    }
+  ],
+  "eval_split": "test_mixed",
+  "has_separate_target_pool": false,
+  "val_mixed_has_both_classes": true,
+  "search_objective": "source_normal_svdd_compactness",
+  "metrics_uad": {
+    "ap": 0.9187054430153778,
+    "auroc": 0.8707270101107367,
+    "f1_pot": 0.6836734693877551,
+    "precision_pot": 0.5193798449612403,
+    "recall_pot": 1.0,
+    "thr_pot": 0.00013639853568747637,
+    "f1_best": 0.8524590163934428,
+    "precision_best": 0.9454545454545454,
+    "recall_best": 0.7761194029850746,
+    "thr_best": 0.0012925390619784594,
+    "event_f1": 1.0,
+    "event_precision": 1.0,
+    "event_recall": 1.0,
+    "delay_mean": 0.0,
+    "delay_median": 0.0
+  }
+}

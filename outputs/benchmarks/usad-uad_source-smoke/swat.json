@@ -1,0 +1,174 @@
+{
+  "mode": "uad_source",
+  "family": "usad",
+  "protocol": "raw_swat_normal_attack",
+  "swat_train_csv": "data\\SWaT\\normal.csv",
+  "swat_test_csv": "data\\SWaT\\attack.csv",
+  "best_arch": "UsadArchConfig(window_length=12, downsample=5, latent_size=1500, hidden_scale=0.75, batch_size=256, max_epoch=1, valid_ratio=0.2, lr=0.001, stride=1, score_alpha=0.5, score_beta=0.5)",
+  "search_history": [
+    {
+      "iter": 1,
+      "arch": "UsadArchConfig(window_length=12, downsample=5, latent_size=1500, hidden_scale=0.75, batch_size=256, max_epoch=1, valid_ratio=0.2, lr=0.001, stride=1, score_alpha=0.5, score_beta=0.5)",
+      "objective": 0.18008582293987274,
+      "val_loss1": 0.17918235063552856,
+      "val_loss2": 0.1800328493118286,
+      "val_score": 0.18008582293987274
+    }
+  ],
+  "usad_family_notes": {
+    "target": "paper_style_source_only",
+    "dataset": "SWaT",
+    "scoring": "alpha_mse(x,w1)+beta_mse(x,w3)",
+    "training": "two_optimizer_adversarial_autoencoder",
+    "preprocess_mode": "train_minmax",
+    "downsample": 5,
+    "frozen_core_components": [
+      "one_mlp_encoder",
+      "two_mlp_decoders",
+      "three_linear_layers_per_module",
+      "relu_hidden_activation",
+      "sigmoid_decoder_output",
+      "paper_style_usad_loss1_loss2",
+      "paper_style_usad_anomaly_score"
+    ],
+    "searched_components": [
+      "latent_size",
+      "hidden_scale"
+    ]
+  },
+  "fixed_baseline": {
+    "arch": "UsadArchConfig(window_length=12, downsample=5, latent_size=1200, hidden_scale=1.0, batch_size=256, max_epoch=1, valid_ratio=0.2, lr=0.001, stride=1, score_alpha=0.5, score_beta=0.5)",
+    "metrics_uad": {
+      "ap": 1.0,
+      "auroc": 0.5,
+      "f1_pot": 0.19889502762430938,
+      "precision_pot": 1.0,
+      "recall_pot": 0.11042944785276074,
+      "thr_pot": 0.13570863485336304,
+      "f1_best": 1.0,
+      "precision_best": 1.0,
+      "recall_best": 1.0,
+      "thr_best": 0.1176544800400734,
+      "event_f1": 1.0,
+      "event_precision": 1.0,
+      "event_recall": 1.0,
+      "delay_mean": 195.0,
+      "delay_median": 195.0
+    },
+    "val_stats": {
+      "val_loss1": 0.17934736609458923,
+      "val_loss2": 0.17739228904247284,
+      "val_score": 0.17921693623065948
+    },
+    "search_train_curve": {
+      "train_loss1": [
+        0.1844947338104248
+      ],
+      "train_loss2": [
+        0.18399063497781754
+      ],
+      "train_score": [
+        0.18156500905752182
+      ],
+      "val_loss1": [
+        0.17934736609458923
+      ],
+      "val_loss2": [
+        0.17739228904247284
+      ],
+      "val_score": [
+        0.17921693623065948
+      ]
+    },
+    "final_train_curve": {
+      "train_loss1": [
+        0.17135506123304367
+      ],
+      "train_loss2": [
+        0.16292259097099304
+      ],
+      "train_score": [
+        0.14413520693778992
+      ],
+      "val_loss1": [],
+      "val_loss2": [],
+      "val_score": []
+    }
+  },
+  "searched_partial_nas": {
+    "arch": "UsadArchConfig(window_length=12, downsample=5, latent_size=1500, hidden_scale=0.75, batch_size=256, max_epoch=1, valid_ratio=0.2, lr=0.001, stride=1, score_alpha=0.5, score_beta=0.5)",
+    "metrics_uad": {
+      "ap": 1.0,
+      "auroc": 0.5,
+      "f1_pot": 0.1264367816091954,
+      "precision_pot": 1.0,
+      "recall_pot": 0.06748466257668712,
+      "thr_pot": 0.1463405555486679,
+      "f1_best": 1.0,
+      "precision_best": 1.0,
+      "recall_best": 1.0,
+      "thr_best": 0.1306437999010086,
+      "event_f1": 1.0,
+      "event_precision": 1.0,
+      "event_recall": 1.0,
+      "delay_mean": 195.0,
+      "delay_median": 195.0
+    },
+    "val_stats": {
+      "val_loss1": 0.17918235063552856,
+      "val_loss2": 0.1800328493118286,
+      "val_score": 0.18008582293987274
+    },
+    "search_train_curve": {
+      "train_loss1": [
+        0.18445556610822678
+      ],
+      "train_loss2": [
+        0.18426964432001114
+      ],
+      "train_score": [
+        0.18198410421609879
+      ],
+      "val_loss1": [
+        0.17918235063552856
+      ],
+      "val_loss2": [
+        0.1800328493118286
+      ],
+      "val_score": [
+        0.18008582293987274
+      ]
+    },
+    "final_train_curve": {
+      "train_loss1": [
+        0.17201314121484756
+      ],
+      "train_loss2": [
+        0.16892195492982864
+      ],
+      "train_score": [
+        0.15136411041021347
+      ],
+      "val_loss1": [],
+      "val_loss2": [],
+      "val_score": []
+    }
+  },
+  "metrics_uad": {
+    "ap": 1.0,
+    "auroc": 0.5,
+    "f1_pot": 0.1264367816091954,
+    "precision_pot": 1.0,
+    "recall_pot": 0.06748466257668712,
+    "thr_pot": 0.1463405555486679,
+    "f1_best": 1.0,
+    "precision_best": 1.0,
+    "recall_best": 1.0,
+    "thr_best": 0.1306437999010086,
+    "event_f1": 1.0,
+    "event_precision": 1.0,
+    "event_recall": 1.0,
+    "delay_mean": 195.0,
+    "delay_median": 195.0
+  }
+}

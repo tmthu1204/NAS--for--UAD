@@ -1,0 +1,160 @@
+% Bien dich bang XeLaTeX
+\documentclass[a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+
+\usepackage[left=3.0cm,right=2.4cm,top=2.8cm,bottom=3.0cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{indentfirst}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{xurl}
+\usepackage[unicode,colorlinks=true,linkcolor=NavyBlue,citecolor=NavyBlue,urlcolor=Blue]{hyperref}
+
+\makeatletter
+\renewcommand\normalsize{%
+    \@setfontsize\normalsize{13pt}{19.5pt}%
+    \abovedisplayskip 13pt plus 3pt minus 7pt%
+    \abovedisplayshortskip \z@ plus 3pt%
+    \belowdisplayshortskip 7pt plus 3.5pt minus 4pt%
+    \belowdisplayskip \abovedisplayskip
+    \let\@listi\@listI
+}
+\makeatother
+\normalsize
+
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{0pt}
+\setlength{\headheight}{14pt}
+\setlength{\footskip}{18pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\captionsetup{font=normalsize,labelfont=bf,labelsep=period}
+\renewcommand{\refname}{Tài liệu tham khảo}
+\urlstyle{same}
+
+\titleformat*{\section}{\Large\bfseries}
+\titleformat*{\subsection}{\large\bfseries}
+\titleformat*{\subsubsection}{\normalsize\bfseries}
+
+\begin{document}
+
+\begin{center}
+    \textbf{\Large TÓM TẮT PAPER: DEEP TRANSFER LEARNING WITH JOINT ADAPTATION NETWORKS (ICML 2017)}\\[0.2cm]
+    \textbf{\Large ỨNG DỤNG VÀO DOMAIN SHIFT TRONG UNSUPERVISED ANOMALY DETECTION}
+\end{center}
+
+\section{Problems}
+
+Trong bài toán domain adaptation, khi source domain và target domain có phân phối khác nhau, mô hình huấn luyện trên source thường suy giảm hiệu suất khi áp dụng sang target. Vấn đề chính là domain shift, đặc biệt là khi dữ liệu target không có nhãn (unsupervised domain adaptation - UDA).
+
+Paper này tập trung vào vấn đề: trong deep neural networks, domain shift không chỉ xuất hiện ở một tầng biểu diễn cuối cùng, mà còn ở nhiều tầng ẩn (hidden layers). Nếu chỉ căn chỉnh một tầng duy nhất (như marginal distribution của tầng cuối), vẫn còn domain gap ở các tầng khác, dẫn đến adaptation không hiệu quả.
+
+Cụ thể, paper chỉ ra rằng:
+\begin{itemize}
+    \item Marginal distribution alignment (như MMD trên một tầng) là chưa đủ.
+    \item Cần căn chỉnh joint distributions của nhiều tầng để bắt được domain shift toàn diện.
+\end{itemize}
+
+\section{Approach}
+
+Paper đề xuất Joint Maximum Mean Discrepancy (JMMD) để căn chỉnh joint distributions của nhiều tầng biểu diễn cùng lúc. Ý tưởng chính là:
+\begin{itemize}
+    \item Sử dụng tensor-product reproducing kernel Hilbert space (RKHS) để ánh xạ joint features từ nhiều tầng.
+    \item Tính MMD trong không gian joint này để đo và giảm domain discrepancy.
+    \item Tích hợp JMMD vào loss function của mạng để tối ưu hóa adaptation.
+\end{itemize}
+
+Approach này mạnh hơn plain MMD vì nó bắt được domain shift ở nhiều mức biểu diễn, không chỉ một tầng.
+
+\section{Method}
+
+\subsection{Cơ sở lý thuyết: MMD và Joint Distributions}
+
+MMD đo khoảng cách giữa hai phân phối bằng cách so sánh mean embeddings trong RKHS:
+
+\[
+\mathrm{MMD}^2(P_s, P_t) = \left\| \mathbb{E}_{x \sim P_s}[\phi(x)] - \mathbb{E}_{y \sim P_t}[\phi(y)] \right\|_{\mathcal{H}}^2.
+\]
+
+Với empirical form:
+
+\[
+\mathrm{MMD}^2(Z_s, Z_t) = \frac{1}{n_s^2} \sum_{i,i'} k(z_{i,s}, z_{i',s}) + \frac{1}{n_t^2} \sum_{j,j'} k(z_{j,t}, z_{j',t}) - \frac{2}{n_s n_t} \sum_{i,j} k(z_{i,s}, z_{j,t}).
+\]
+
+Để mở rộng sang joint distributions, paper dùng tensor product của kernels từ nhiều tầng:
+
+\[
+\Phi(Z) = \bigotimes_{\ell \in \mathcal{L}} \phi^{\ell}(z^{\ell}),
+\]
+
+trong đó $Z = (z^{\ell_1}, \dots, z^{\ell_m})$ là features từ nhiều tầng $\mathcal{L}$.
+
+Joint MMD:
+
+\[
+D_{\mathrm{rep}}^{\mathrm{JMMD}}(P_s, P_t) = \left\| \mathbb{E}_{Z_s \sim P_s} [\Phi(Z_s)] - \mathbb{E}_{Z_t \sim P_t} [\Phi(Z_t)] \right\|^2.
+\]
+
+Empirical JMMD:
+
+\[
+\widehat{D}_{\mathrm{rep}}^{\mathrm{JMMD}} = \frac{1}{n_s^2} \sum_{i,i'} \prod_{\ell \in \mathcal{L}} k^{\ell}(z_{i,s}^{\ell}, z_{i',s}^{\ell}) + \frac{1}{n_t^2} \sum_{j,j'} \prod_{\ell \in \mathcal{L}} k^{\ell}(z_{j,t}^{\ell}, z_{j',t}^{\ell}) - \frac{2}{n_s n_t} \sum_{i,j} \prod_{\ell \in \mathcal{L}} k^{\ell}(z_{i,s}^{\ell}, z_{j,t}^{\ell}).
+\]
+
+Linear-time estimator cho training:
+
+\[
+\widehat{D}_{\mathrm{rep},L}^{\mathrm{JMMD}} = \frac{2}{n} \sum_{i=1}^{n/2} \left[ \prod_{\ell \in \mathcal{L}} k^{\ell}(z_{2i-1,s}^{\ell}, z_{2i,s}^{\ell}) + \prod_{\ell \in \mathcal{L}} k^{\ell}(z_{2i-1,t}^{\ell}, z_{2i,t}^{\ell}) - \prod_{\ell \in \mathcal{L}} k^{\ell}(z_{2i-1,s}^{\ell}, z_{2i,t}^{\ell}) - \prod_{\ell \in \mathcal{L}} k^{\ell}(z_{2i-1,t}^{\ell}, z_{2i,s}^{\ell}) \right].
+\]
+
+\subsection{Architecture và Training}
+
+Mạng gồm:
+\begin{itemize}
+    \item Feature extractor với nhiều tầng.
+    \item Task classifier cho source.
+    \item Domain classifier cho adaptation.
+\end{itemize}
+
+Loss tổng: $\mathcal{L} = \mathcal{L}_y + \lambda \mathcal{L}_{\mathrm{JMMD}}$, trong đó $\mathcal{L}_{\mathrm{JMMD}}$ là JMMD loss giữa source và target features từ nhiều tầng.
+
+\section{Áp dụng vào Domain Shift trong Dự án của Bạn}
+
+Trong dự án NAS-based UAD, domain shift giữa source (máy này) và target (máy khác) là covariate shift dưới temporal nonstationarity. Để đo representation shift, thay vì dùng MMD trên một embedding cuối, bạn nên dùng JMMD trên features từ nhiều tầng của encoder (như EncoderCNN với 3-4 blocks).
+
+Cách áp dụng:
+\begin{enumerate}[label=\arabic*.]
+    \item Extract features từ nhiều tầng: Sử dụng \texttt{forward\_multi\_features} để lấy list features từ mỗi conv block.
+    \item Tính JMMD: Dùng empirical JMMD trên source-normal và target-reliable windows.
+    \item Interpretation: $D_{\mathrm{rep}}^{\mathrm{JMMD}}$ lớn nghĩa là mismatch ở joint representations, hỗ trợ claim rằng adaptation cần thiết.
+\end{enumerate}
+
+Ví dụ code (giả định):
+\[
+D_{\mathrm{rep}}(s,t) = \widehat{D}_{\mathrm{rep}}^{\mathrm{JMMD}}(Z_s^{\mathcal{L}}, Z_t^{\mathcal{L}}),
+\]
+trong đó $Z_s^{\mathcal{L}}$ là list features từ các tầng của source.
+
+\begin{thebibliography}{99}
+\bibitem{jan}
+Mingsheng Long, Han Zhu, Jianmin Wang, and Michael I. Jordan.
+\newblock Deep Transfer Learning with Joint Adaptation Networks.
+\newblock In \emph{Proceedings of the 34th International Conference on Machine Learning}, 2017.
+\end{thebibliography}
+
+\end{document}

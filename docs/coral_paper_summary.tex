@@ -1,0 +1,151 @@
+% Bien dich bang XeLaTeX
+\documentclass[a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+
+\usepackage[left=3.0cm,right=2.4cm,top=2.8cm,bottom=3.0cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{indentfirst}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{xurl}
+\usepackage[unicode,colorlinks=true,linkcolor=NavyBlue,citecolor=NavyBlue,urlcolor=Blue]{hyperref}
+
+\makeatletter
+\renewcommand\normalsize{%
+    \@setfontsize\normalsize{13pt}{19.5pt}%
+    \abovedisplayskip 13pt plus 3pt minus 7pt%
+    \abovedisplayshortskip \z@ plus 3pt%
+    \belowdisplayskip \abovedisplayskip
+    \let\@listi\@listI
+}
+\makeatother
+\normalsize
+
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{0pt}
+\setlength{\headheight}{14pt}
+\setlength{\footskip}{18pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\captionsetup{font=normalsize,labelfont=bf,labelsep=period}
+\renewcommand{\refname}{Tài liệu tham khảo}
+\urlstyle{same}
+
+\titleformat*{\section}{\Large\bfseries}
+\titleformat*{\subsection}{\large\bfseries}
+\titleformat*{\subsubsection}{\normalsize\bfseries}
+
+\begin{document}
+
+\begin{center}
+    \textbf{\Large TÓM TẮT PAPER: RETURN OF FRUSTRATINGLY EASY DOMAIN ADAPTATION (AAAI 2016)}\\[0.2cm]
+    \textbf{\Large ỨNG DỤNG VÀO DOMAIN SHIFT TRONG UNSUPERVISED ANOMALY DETECTION}
+\end{center}
+
+\section{Problems}
+
+Domain adaptation là bài toán quan trọng khi source và target domains khác nhau, nhưng target không có nhãn. Các phương pháp phức tạp như adversarial training thường tốn kém và không ổn định.
+
+Paper này đặt vấn đề: liệu có cách đơn giản để align second-order statistics (covariance) giữa source và target mà không cần tối ưu hóa phức tạp? Vấn đề là covariance mismatch có thể gây ra domain shift lớn, đặc biệt trong high-dimensional features, nhưng các phương pháp truyền thống bỏ qua điều này.
+
+Cụ thể:
+\begin{itemize}
+    \item Mean alignment là chưa đủ; cần align covariance structure.
+    \item Phương pháp nên "frustratingly easy" (đơn giản đến mức khó tin), không cần training thêm.
+\end{itemize}
+
+\section{Approach}
+
+Paper đề xuất CORAL (CORelation ALignment) để align covariance matrices của source và target bằng cách whitening source và recoloring theo target. Ý tưởng:
+\begin{itemize}
+    \item Tính covariance của source và target.
+    \item Biến đổi source để covariance của nó khớp với target.
+    \item Không cần learn parameters; chỉ cần matrix operations.
+\end{itemize}
+
+Approach này hiệu quả vì covariance bắt được second-order dependencies, quan trọng cho domain shift.
+
+\section{Method}
+
+\subsection{Cơ sở lý thuyết: Covariance Alignment}
+
+Covariance matrix của source:
+
+\[
+C_s = \frac{1}{n_s - 1} (D_s^\top D_s - \frac{1}{n_s} (\mathbf{1}^\top D_s)^\top (\mathbf{1}^\top D_s)),
+\]
+
+tương tự cho target $C_t$.
+
+CORAL tìm linear transform $A$ để minimize:
+
+\[
+\min_A \| A^\top C_s A - C_t \|_F^2,
+\]
+
+với nghiệm closed-form:
+
+\[
+A = C_s^{-1/2} C_t^{1/2}.
+\]
+
+Source transformed:
+
+\[
+\widetilde{D}_s = D_s C_s^{-1/2} C_t^{1/2}.
+\]
+
+Trong deep learning, CORAL loss:
+
+\[
+\mathcal{L}_{\mathrm{CORAL}} = \frac{1}{4d^2} \| C_s - C_t \|_F^2,
+\]
+
+trong đó $d$ là feature dimension.
+
+\subsection{Implementation}
+
+\begin{itemize}
+    \item Extract features từ source và target.
+    \item Tính covariance matrices.
+    \item Thêm CORAL loss vào training objective.
+\end{itemize}
+
+Không cần adversarial components; chỉ cần Frobenius distance.
+
+\section{Áp dụng vào Domain Shift trong Dự án của Bạn}
+
+Trong UAD trên multivariate time series, dependency shift (cách sensors co-vary) quan trọng. Để đo dependency shift, dùng CORAL distance trên embeddings cuối.
+
+Cách áp dụng:
+\begin{enumerate}[label=\arabic*.]
+    \item Extract embeddings cuối từ source-normal và target-reliable windows.
+    \item Tính covariance: $C_s = \mathrm{Cov}(Z_s)$, $C_t = \mathrm{Cov}(Z_t)$.
+    \item Tính shift: $D_{\mathrm{dep}}(s,t) = \frac{1}{4d^2} \| C_s - C_t \|_F^2$.
+    \item Interpretation: $D_{\mathrm{dep}}$ lớn nghĩa là mismatch trong inter-variable dependencies, bổ sung cho representation shift.
+\end{enumerate}
+
+Ví dụ: Trong SMD, nếu máy khác có sensor coupling khác, CORAL sẽ bắt được.
+
+\begin{thebibliography}{99}
+\bibitem{coral}
+Baochen Sun, Jiashi Feng, and Kate Saenko.
+\newblock Return of Frustratingly Easy Domain Adaptation.
+\newblock In \emph{Proceedings of the AAAI Conference on Artificial Intelligence}, 2016.
+\end{thebibliography}
+
+\end{document}

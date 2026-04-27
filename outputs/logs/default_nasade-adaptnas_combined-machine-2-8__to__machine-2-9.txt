@@ -1,0 +1,116 @@
+[UAD INPUT]
+  train_normal: (369, 128, 38) y: yes
+  target_pool : (89, 128, 38) y: no/ignored
+  val_mixed   : (75, 128, 38) y: yes
+  test_mixed  : (172, 128, 38) y: yes
+[INFO] Normalizing window size to 128...
+[INFO] TS-TCC pretraining ...
+[INFO] TS-TCC pretraining on train_normal + target_pool_unlabeled: 458 windows.
+>>> Training TS-TCC ...
+[Epoch 1] Train Loss=8.9677, Train Acc=0.0000
+[Epoch 2] Train Loss=7.4351, Train Acc=0.0000
+[Epoch 3] Train Loss=6.7390, Train Acc=0.0000
+>>> TS-TCC training finished.
+
+
+[ITER 1/3] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...
+    [W] w_ent stats: mean=0.4949 min=0.0500 max=0.8539
+[BiLevel] step 20/80 | train_loss=-0.5539 | upper_obj=0.2676 (src=0.7082, tgt=0.0771, gap=0.0012)
+[BiLevel] step 40/80 | train_loss=-0.4946 | upper_obj=0.3308 (src=0.4909, tgt=0.2570, gap=0.0036)
+[BiLevel] step 60/80 | train_loss=-0.4225 | upper_obj=0.5022 (src=0.9129, tgt=0.2550, gap=0.0498)
+[BiLevel] step 80/80 | train_loss=-0.3450 | upper_obj=0.6318 (src=1.2368, tgt=0.2698, gap=0.0719)
+  Candidate 1/2: upper_obj=0.985452 (src=2.765418, tgt=0.206217, gap=0.011474)
+    [W] w_ent stats: mean=0.4568 min=0.0500 max=0.8044
+[BiLevel] step 20/80 | train_loss=-0.3829 | upper_obj=0.3936 (src=1.1972, tgt=0.0355, gap=0.0096)
+[BiLevel] step 40/80 | train_loss=-0.1691 | upper_obj=2.2987 (src=3.2703, tgt=0.0001, gap=1.3176)
+[BiLevel] step 60/80 | train_loss=-0.2030 | upper_obj=1.9408 (src=1.5188, tgt=0.0003, gap=1.4849)
+[BiLevel] step 80/80 | train_loss=-0.2216 | upper_obj=2.0707 (src=1.6338, tgt=0.0000, gap=1.5806)
+  Candidate 2/2: upper_obj=2.111298 (src=6.757785, tgt=0.025867, gap=0.065856)
+[ITER 1] ✅ Best iter arch = ArchConfig(enc_filters=[16, 16, 64], enc_kernels=[5, 3, 3], enc_strides=[1, 1, 1], enc_dilations=[2, 1, 1], enc_pool=None, enc_activation='relu', seq_type='transformer', seq_layers=1, seq_heads=2, seq_hidden=128, seq_kernel=3, seq_dilation=1, clf_layers=1, clf_units=64, d_model=128) | upper_obj=0.985452
+
+[ITER 2/3] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...
+    [W] w_ent stats: mean=0.4587 min=0.0500 max=0.6983
+[BiLevel] step 20/80 | train_loss=-2.5906 | upper_obj=7.2224 (src=14.4029, tgt=0.0081, gap=0.0170)
+[BiLevel] step 40/80 | train_loss=-4.2082 | upper_obj=7.5485 (src=15.0168, tgt=0.0108, gap=0.0348)
+[BiLevel] step 60/80 | train_loss=-5.9891 | upper_obj=8.9659 (src=17.7868, tgt=0.0495, gap=0.0477)
+[BiLevel] step 80/80 | train_loss=-5.8999 | upper_obj=9.4326 (src=18.7311, tgt=0.0478, gap=0.0431)
+  Candidate 1/2: upper_obj=6.230253 (src=12.414058, tgt=0.001819, gap=0.022314)
+    [W] w_ent stats: mean=0.4477 min=0.0500 max=0.7524
+[BiLevel] step 20/80 | train_loss=-0.9555 | upper_obj=0.1067 (src=0.2107, tgt=0.0014, gap=0.0007)
+[BiLevel] step 40/80 | train_loss=-0.9153 | upper_obj=0.1821 (src=0.2852, tgt=0.0751, gap=0.0020)
+[BiLevel] step 60/80 | train_loss=-0.9606 | upper_obj=0.2236 (src=0.3779, tgt=0.0503, gap=0.0095)
+[BiLevel] step 80/80 | train_loss=-0.9574 | upper_obj=0.2293 (src=0.3875, tgt=0.0475, gap=0.0118)
+  Candidate 2/2: upper_obj=0.164266 (src=0.291137, tgt=0.033475, gap=0.001960)
+[ITER 2] ✅ Best iter arch = ArchConfig(enc_filters=[16], enc_kernels=[3], enc_strides=[2], enc_dilations=[2], enc_pool=('max', 2), enc_activation='lrelu', seq_type='transformer', seq_layers=2, seq_heads=4, seq_hidden=64, seq_kernel=3, seq_dilation=1, clf_layers=3, clf_units=64, d_model=64) | upper_obj=0.164266
+
+[ITER 3/3] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...
+    [W] w_ent stats: mean=0.4699 min=0.0500 max=0.7430
+[BiLevel] step 20/80 | train_loss=-0.6686 | upper_obj=0.7401 (src=0.8364, tgt=0.5116, gap=0.0011)
+[BiLevel] step 40/80 | train_loss=-0.9433 | upper_obj=0.4623 (src=0.5331, tgt=0.2904, gap=0.0020)
+[BiLevel] step 60/80 | train_loss=-0.8990 | upper_obj=0.3917 (src=0.4303, tgt=0.2815, gap=0.0061)
+[BiLevel] step 80/80 | train_loss=-0.8801 | upper_obj=0.3602 (src=0.3974, tgt=0.2518, gap=0.0065)
+  Candidate 1/2: upper_obj=0.279061 (src=0.281078, tgt=0.267300, gap=0.002117)
+    [W] w_ent stats: mean=0.4181 min=0.0500 max=0.6266
+[BiLevel] step 20/80 | train_loss=-0.8906 | upper_obj=1.3552 (src=1.7926, tgt=0.3184, gap=0.0048)
+[BiLevel] step 40/80 | train_loss=-0.8728 | upper_obj=2.1652 (src=2.8347, tgt=0.0835, gap=0.1559)
+[BiLevel] step 60/80 | train_loss=-0.9085 | upper_obj=5.9105 (src=7.4055, tgt=0.0868, gap=0.7006)
+[BiLevel] step 80/80 | train_loss=-0.8144 | upper_obj=7.7779 (src=9.7930, tgt=0.0945, gap=0.8945)
+  Candidate 2/2: upper_obj=14.631699 (src=19.984048, tgt=0.036131, gap=0.632026)
+[ITER 3] ✅ Best iter arch = ArchConfig(enc_filters=[64, 16, 64], enc_kernels=[7, 3, 3], enc_strides=[2, 2, 2], enc_dilations=[1, 2, 1], enc_pool=None, enc_activation='relu', seq_type='gru', seq_layers=2, seq_heads=1, seq_hidden=128, seq_kernel=3, seq_dilation=1, clf_layers=1, clf_units=32, d_model=128) | upper_obj=0.279061
+
+[SEARCH DONE] ✅ Best OVERALL arch = ArchConfig(enc_filters=[16], enc_kernels=[3], enc_strides=[2], enc_dilations=[2], enc_pool=('max', 2), enc_activation='lrelu', seq_type='transformer', seq_layers=2, seq_heads=4, seq_hidden=64, seq_kernel=3, seq_dilation=1, clf_layers=3, clf_units=64, d_model=64) (iter 2) | best_upper_obj=0.164266
+[INFO] Final stage ...
+
+[FINAL-ONLY] Running: Base_CNN_GRU (eval on test_mixed)
+[FINAL-ONLY][Base_CNN_GRU] weights: mean=0.4563 min=0.0500 max=0.6965 | tau=1.0 w_min=0.05 nu=0.05
+[BiLevel] step 20/200 | train_loss=-1.2728 | upper_obj=3.4933 (src=4.9378, tgt=0.1042, gap=0.0056)
+[BiLevel] step 40/200 | train_loss=-1.2102 | upper_obj=3.3649 (src=4.7580, tgt=0.0372, gap=0.0231)
+[BiLevel] step 60/200 | train_loss=-0.8570 | upper_obj=1.7550 (src=2.4363, tgt=0.0013, gap=0.0492)
+[BiLevel] step 80/200 | train_loss=-0.6801 | upper_obj=1.5524 (src=2.1191, tgt=0.0001, gap=0.0691)
+[BiLevel] step 100/200 | train_loss=-0.8312 | upper_obj=1.1304 (src=1.5029, tgt=0.0001, gap=0.0783)
+[BiLevel] step 120/200 | train_loss=-1.1666 | upper_obj=1.2352 (src=1.6675, tgt=0.0009, gap=0.0677)
+[BiLevel] step 140/200 | train_loss=-0.6269 | upper_obj=1.2861 (src=1.7388, tgt=0.0008, gap=0.0687)
+[BiLevel] step 160/200 | train_loss=-0.6781 | upper_obj=1.1372 (src=1.5205, tgt=0.0008, gap=0.0726)
+[BiLevel] step 180/200 | train_loss=-0.6249 | upper_obj=1.0684 (src=1.4089, tgt=0.0006, gap=0.0820)
+[BiLevel] step 200/200 | train_loss=-0.6123 | upper_obj=1.1000 (src=1.4616, tgt=0.0008, gap=0.0766)
+
+[FINAL-ONLY] Running: Base_CNN_TCN (eval on test_mixed)
+[FINAL-ONLY][Base_CNN_TCN] weights: mean=0.4735 min=0.0500 max=0.8052 | tau=1.0 w_min=0.05 nu=0.05
+[BiLevel] step 20/200 | train_loss=-1.1782 | upper_obj=18.2865 (src=26.0844, tgt=0.0001, gap=0.0274)
+[BiLevel] step 40/200 | train_loss=-5.2254 | upper_obj=14.2527 (src=20.3528, tgt=0.0001, gap=0.0057)
+[BiLevel] step 60/200 | train_loss=-11.3177 | upper_obj=9.9058 (src=14.1446, tgt=0.0003, gap=0.0044)
+[BiLevel] step 80/200 | train_loss=-16.2652 | upper_obj=9.0921 (src=12.9849, tgt=0.0003, gap=0.0026)
+[BiLevel] step 100/200 | train_loss=-18.7924 | upper_obj=7.0806 (src=10.1131, tgt=0.0000, gap=0.0014)
+[BiLevel] step 120/200 | train_loss=-32.6211 | upper_obj=6.0295 (src=8.6103, tgt=0.0000, gap=0.0023)
+[BiLevel] step 140/200 | train_loss=-19.5170 | upper_obj=4.8104 (src=6.8690, tgt=0.0000, gap=0.0021)
+[BiLevel] step 160/200 | train_loss=-32.1906 | upper_obj=4.4539 (src=6.3594, tgt=0.0000, gap=0.0023)
+[BiLevel] step 180/200 | train_loss=-26.4899 | upper_obj=3.5925 (src=5.1286, tgt=0.0001, gap=0.0025)
+[BiLevel] step 200/200 | train_loss=-32.9409 | upper_obj=4.1173 (src=5.8759, tgt=0.0000, gap=0.0041)
+
+[FINAL-ONLY] Running: Base_CNN_TRF (eval on test_mixed)
+[FINAL-ONLY][Base_CNN_TRF] weights: mean=0.4621 min=0.0500 max=0.7469 | tau=1.0 w_min=0.05 nu=0.05
+[BiLevel] step 20/200 | train_loss=-0.9685 | upper_obj=1.1443 (src=1.6052, tgt=0.0259, gap=0.0128)
+[BiLevel] step 40/200 | train_loss=-0.7795 | upper_obj=1.4758 (src=1.4240, tgt=0.0008, gap=0.4787)
+[BiLevel] step 60/200 | train_loss=-1.3161 | upper_obj=1.3323 (src=0.4366, tgt=0.0018, gap=1.0262)
+[BiLevel] step 80/200 | train_loss=-1.3745 | upper_obj=1.6938 (src=0.7554, tgt=0.0002, gap=1.1649)
+[BiLevel] step 100/200 | train_loss=-1.3695 | upper_obj=1.2105 (src=0.5438, tgt=0.0004, gap=0.8297)
+[BiLevel] step 120/200 | train_loss=-1.0716 | upper_obj=0.9738 (src=0.4683, tgt=0.0002, gap=0.6459)
+[BiLevel] step 140/200 | train_loss=-1.0134 | upper_obj=1.0170 (src=0.4139, tgt=0.0000, gap=0.7273)
+[BiLevel] step 160/200 | train_loss=-1.1690 | upper_obj=0.9843 (src=0.3833, tgt=0.0000, gap=0.7160)
+[BiLevel] step 180/200 | train_loss=-1.1864 | upper_obj=0.9762 (src=0.3547, tgt=0.0000, gap=0.7280)
+[BiLevel] step 200/200 | train_loss=-1.1721 | upper_obj=0.8837 (src=0.3754, tgt=0.0005, gap=0.6208)
+
+[FINAL-ONLY] Running: NAS_BestArch (eval on test_mixed)
+[FINAL-ONLY][NAS_BestArch] weights: mean=0.4101 min=0.0500 max=0.6019 | tau=1.0 w_min=0.05 nu=0.05
+[BiLevel] step 20/200 | train_loss=-1.1582 | upper_obj=0.3550 (src=0.5001, tgt=0.0024, gap=0.0042)
+[BiLevel] step 40/200 | train_loss=-1.0729 | upper_obj=1.0207 (src=1.3831, tgt=0.0103, gap=0.0494)
+[BiLevel] step 60/200 | train_loss=-1.0305 | upper_obj=2.8734 (src=1.1922, tgt=0.0000, gap=2.0388)
+[BiLevel] step 80/200 | train_loss=-1.6030 | upper_obj=2.1111 (src=0.9622, tgt=0.0000, gap=1.4375)
+[BiLevel] step 100/200 | train_loss=-1.8677 | upper_obj=1.0301 (src=0.5390, tgt=0.0000, gap=0.6528)
+[BiLevel] step 120/200 | train_loss=-2.5327 | upper_obj=1.0713 (src=0.5551, tgt=0.0000, gap=0.6827)
+[BiLevel] step 140/200 | train_loss=-2.3850 | upper_obj=0.5757 (src=0.5428, tgt=0.0000, gap=0.1957)
+[BiLevel] step 160/200 | train_loss=-2.6725 | upper_obj=0.5256 (src=0.5078, tgt=0.0000, gap=0.1701)
+[BiLevel] step 180/200 | train_loss=-2.8056 | upper_obj=0.5330 (src=0.4598, tgt=0.0000, gap=0.2112)
+[BiLevel] step 200/200 | train_loss=-2.8215 | upper_obj=0.6118 (src=0.5771, tgt=0.0000, gap=0.2078)
+
+[OK] Saved outputs/results.json

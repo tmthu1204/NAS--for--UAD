@@ -1,0 +1,275 @@
+% Compile with XeLaTeX
+\documentclass[a4paper]{article}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+
+\usepackage[left=3.0cm,right=2.4cm,top=2.8cm,bottom=3.0cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{indentfirst}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{xurl}
+\usepackage[unicode,colorlinks=true,linkcolor=NavyBlue,citecolor=NavyBlue,urlcolor=Blue]{hyperref}
+
+\makeatletter
+\renewcommand\normalsize{%
+    \@setfontsize\normalsize{13pt}{19.5pt}%
+    \abovedisplayskip 13pt plus 3pt minus 7pt%
+    \abovedisplayshortskip \z@ plus 3pt%
+    \belowdisplayskip \abovedisplayskip
+    \let\@listi\@listI
+}
+\makeatother
+\normalsize
+
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{0pt}
+\setlength{\headheight}{14pt}
+\setlength{\footskip}{18pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\captionsetup{font=normalsize,labelfont=bf,labelsep=period}
+\renewcommand{\tablename}{Table}
+\renewcommand{\refname}{References}
+\urlstyle{same}
+
+\titleformat*{\section}{\Large\bfseries}
+\titleformat*{\subsection}{\large\bfseries}
+\titleformat*{\subsubsection}{\normalsize\bfseries}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\begin{document}
+
+\begin{center}
+    \textbf{\Large REPORT ON PROPOSED STRUCTURE AND FORMULAS FOR MEASURING DOMAIN SHIFT}\\[0.2cm]
+    \textbf{\Large IN NAS EXPERIMENTS FOR UNSUPERVISED ANOMALY DETECTION}\\[0.5cm]
+    \textbf{Objective: Rewrite the report following the framework of Problem, Purpose, Related Work, Method, Formulas; and use TS-TCC as the encoder for JMMD and CORAL measurements.}
+\end{center}
+
+\section{Problem}
+
+In the experiments of the thesis, models are trained on source data and deployed to unlabeled target data. Source and target often belong to the same system family but differ by machine, operating conditions, environment, measurement time, calibration, or aging. Therefore, the core problem is not just whether the model works on the target, but to quantify the source-target mismatch in a way that explains when adaptation is truly beneficial.
+
+Probabilistically, this is primarily a problem of \textbf{covariate shift under temporal nonstationarity}:
+\[
+P_s(X) \neq P_t(X).
+\]
+
+Concept drift
+\[
+P_s(Y \mid X) \neq P_t(Y \mid X)
+\]
+may exist, but should not be assumed by default without evidence that the semantics of normal/anomalous have changed. For multivariate time series anomaly detection, using raw summary statistics or domain classifiers on mean-std features is insufficient, as it ignores temporal context, latent geometry, and dependency structures between sensors.
+
+\section{Purpose}
+
+This report pursues four specific purposes:
+\begin{enumerate}[label=\arabic*.]
+    \item Describe the true nature of domain shift in the source-target unlabeled deployment setting;
+    \item Select main references only from strong venues in the A/A* group such as AAAI, ICLR, ICML, NeurIPS, KDD;
+    \item Directly answer whether there is a better way to measure \textbf{representation shift} than plain MMD;
+    \item Propose a shift measurement protocol tight enough to support claims on when \texttt{adaptnas\_combined} can outperform \texttt{uad\_source}.
+\end{enumerate}
+
+The concise conclusion of the report is: \textbf{yes}. If a representation-shift metric stronger than single-layer MMD is needed, use \textbf{JMMD} on multi-layer contextual features inspired by JAN \cite{jan}. CORAL \cite{coral} serves as supplementary dependency shift measurement, while DANN \cite{dann} should only be used as a sanity check for domain separability.
+
+\section{Related Work}
+
+\subsection{Key Papers to Cite}
+
+\small
+\begin{longtable}{L{0.23\textwidth}L{0.13\textwidth}L{0.25\textwidth}L{0.31\textwidth}}
+\toprule
+\textbf{Paper} & \textbf{Venue} & \textbf{Main Content} & \textbf{Conclusion for Report} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Paper} & \textbf{Venue} & \textbf{Main Content} & \textbf{Conclusion for Report} \\
+\midrule
+\endhead
+TS-TCC \cite{tstcc} & ICLR 2022 & Self-supervised learning of temporal and contextual representations for time series. & TS-TCC provides the contextual encoder needed for measuring domain shift in latent time-series space. \\
+JAN \cite{jan} & ICML 2017 & Align \emph{joint distributions} of multiple domain-specific layers using JMMD. & JMMD is a stronger choice than plain MMD as it considers multiple marginal distributions. \\
+CORAL \cite{coral} & AAAI 2016 & Align second-order statistics between source and target. & Dependency shift should be measured via covariance mismatch in latent space. \\
+DANN \cite{dann} & ICML 2015 & Learn features that are task-discriminative yet domain-invariant via gradient reversal. & Domain separability should be a sanity check; it is useful but not stable enough as the main metric. \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\subsection{Why Use TS-TCC for Contextual Representations}
+
+In multivariate time series anomaly detection, domain shift should be measured in latent space with temporal context, not on raw signals. TS-TCC \cite{tstcc} learns representations by contrasting temporal and contextual views, making it ideal for capturing hierarchical features across multiple layers. This aligns with the need for multi-layer features in JMMD and final embeddings in CORAL.
+
+\subsection{Why Two Views: Representation and Dependency Shift}
+
+Domain shift in transfer learning encompasses multiple aspects, including representation shift (mismatch in feature distributions) and dependency shift (mismatch in feature dependencies or correlations). Representation shift measures how features from different domains differ in their marginal distributions, which is critical for deep models where layers capture hierarchical abstractions. Dependency shift, on the other hand, captures differences in second-order statistics, such as covariances, reflecting how features interact within domains. Both are necessary because domain shift can manifest in feature-level mismatches (representation) and relational mismatches (dependency), and ignoring either leads to incomplete adaptation assessment. This dual-view approach is supported by surveys on transfer learning, which emphasize that comprehensive domain shift measurement requires addressing both distributional and relational differences \cite{pan2010survey}.
+
+\subsection{Position for the Report}
+
+From the above papers, the tightest writing direction is:
+\begin{enumerate}[label=\arabic*.]
+    \item Use TS-TCC as the contextual encoder;
+    \item Use JMMD as the \textbf{main representation shift};
+    \item Use CORAL as \textbf{supplementary dependency shift};
+    \item Use DANN-style domain classifier only as \textbf{sanity check} for separability.
+\end{enumerate}
+
+\section{Method}
+
+\subsection{Data for Shift Measurement}
+
+Shift should only be measured on the cleanest normal behavior. Let \(X_s^N\) be the source-normal windows, \(X_t^U\) the target unlabeled windows, and \(\widehat{X}_t^N \subseteq X_t^U\) the target windows retained after conservative filtering to reduce anomaly contamination. The purpose is to prevent rare but strong anomalies from dominating the shift score.
+
+\subsection{Principle for Choosing Representation Space}
+
+Instead of measuring on raw signals or summary statistics, this report assumes a contextual encoder \(f\) trained in the spirit of TS-TCC \cite{tstcc}. If the encoder has multiple layers or contextual levels, take a set of layers \(\mathcal{L}\) to build representation shift. This is what makes JMMD more suitable than MMD: shift is no longer compressed into a single final embedding.
+
+\subsection{Proposed Shift Measurement Protocol}
+
+The proposed protocol consists of three components:
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Main representation shift:} measured by JMMD on multi-layer contextual features.
+    \item \textbf{Supplementary dependency shift:} measured by CORAL distance on the final embedding or pooled embedding.
+    \item \textbf{Domain separability sanity check:} use DANN-style adversarial objective to confirm if source and target are truly separable in latent space.
+\end{enumerate}
+
+The main report should keep the first two scores separate. If ranking source-target pairs is needed, normalize and combine in experiments, but the Method section should emphasize that representation shift and dependency shift reflect different aspects of mismatch, not to collapse too early into a single number.
+
+\subsection{Direct Answer to ``Is there a better way than current representation shift?''}
+
+The answer is \textbf{yes}. If current representation shift is calculated as MMD on a single final embedding, a better choice for the report is \textbf{JMMD on multi-layer contextual features}. The reasons are:
+\begin{enumerate}[label=\arabic*.]
+    \item JMMD captures simultaneous mismatch across multiple representation layers, not just one;
+    \item JMMD aligns more closely with deep transfer learning arguments from A* venue ICML;
+    \item JMMD suits multivariate time series, where temporal context and feature extractor hierarchy both carry domain shift information;
+    \item CORAL should still accompany to capture second-order dependency mismatch that JMMD may not directly interpret.
+\end{enumerate}
+
+\section{Formulas, Formula Sources, Paper Content, and Conclusions}
+
+\subsection{Formula 1: Main Representation Shift via JMMD}
+
+\[
+D_{\mathrm{rep}}^{\mathrm{JMMD}}(s,t)
+= \left\|
+\frac{1}{n_s}\sum_{i=1}^{n_s} \bigotimes_{\ell \in \mathcal{L}} \phi^{\ell}(h_{i,s}^{\ell})
+-
+\frac{1}{n_t}\sum_{j=1}^{n_t} \bigotimes_{\ell \in \mathcal{L}} \phi^{\ell}(h_{j,t}^{\ell})
+\right\|^2.
+\]
+
+Where \(h_{i,s}^{\ell}\) and \(h_{j,t}^{\ell}\) are features from source and target at layer \(\ell\), and \(\phi^{\ell}(\cdot)\) is the corresponding kernel mapping.
+
+\textbf{Formula Reference.} Long et al., \emph{Deep Transfer Learning with Joint Adaptation Networks}, ICML 2017 \cite{jan}.
+
+\textbf{What the paper says.} JAN argues that aligning only one marginal distribution at the final layer leaves domain gap in task-specific layers. Therefore, the paper proposes \textbf{Joint Maximum Mean Discrepancy} to align \textbf{joint distributions} of multiple layers simultaneously.
+
+\textbf{Paper conclusion.} On UDA benchmarks, joint adaptation outperforms single feature space alignments. This conclusion is crucial for this report: if the goal is to measure representation shift more rigorously than plain MMD, then \textbf{JMMD is a better choice than single-layer MMD}.
+
+\textbf{Conclusion for this problem.} In multivariate time series anomaly detection, shift lies not only in the final embedding but also in how temporal context is encoded across multiple layers. Therefore, the report should settle on \(D_{\mathrm{rep}}\) as JMMD.
+
+\subsection{Formula 2: Dependency Shift via CORAL Distance}
+
+\[
+C_s = \mathrm{Cov}(Z_s),
+\qquad
+C_t = \mathrm{Cov}(Z_t),
+\]
+\[
+D_{\mathrm{dep}}(s,t) = \frac{1}{4d^2}\left\| C_s - C_t \right\|_F^2.
+\]
+
+Where \(Z_s\) and \(Z_t\) are the final embeddings of source and target, and \(d\) is the embedding dimension.
+
+\textbf{Formula Reference.} Sun et al., \emph{Return of Frustratingly Easy Domain Adaptation}, AAAI 2016 \cite{coral}.
+
+\textbf{What the paper says.} CORAL argues that an important part of domain shift lies in \textbf{second-order statistics}. If the covariance structure differs between two domains, models trained on source easily degrade when deployed to target. The paper thus uses covariance difference as a simple but effective alignment objective.
+
+\textbf{Paper conclusion.} With just second-order statistics alignment, a very simple method still achieves competitive results on domain adaptation benchmarks. This shows covariance mismatch is a genuine domain shift signal, not a minor detail.
+
+\textbf{Conclusion for this problem.} CORAL does not replace representation shift, but it is a good supplementary metric for measuring \textbf{dependency shift}. In multivariate TSAD, this part should be kept because mismatch between source and target often lies in the coupling between sensors, not just individual mean or variance.
+
+\subsection{Formula 3: Domain-Adversarial Objective as Sanity Check}
+
+\[
+E(\theta_f,\theta_y,\theta_d)
+= \mathcal{L}_y(\theta_f,\theta_y)
+- \lambda \mathcal{L}_d(\theta_f,\theta_d).
+\]
+
+Where \(\mathcal{L}_y\) is the main task loss, \(\mathcal{L}_d\) is the domain-classification loss, and \(\theta_f, \theta_y, \theta_d\) are parameters of the feature extractor, label predictor, and domain discriminator respectively.
+
+\textbf{Formula Reference.} Ganin and Lempitsky, \emph{Unsupervised Domain Adaptation by Backpropagation}, ICML 2015 \cite{dann}.
+
+\textbf{What the paper says.} DANN optimizes a feature extractor to maintain task signal while making source and target harder to distinguish by the domain discriminator. The central tool is gradient reversal and adversarial objective between task discrimination and domain invariance.
+
+\textbf{Paper conclusion.} Learning domain-invariant features via adversarial objective yields strong adaptation results on major benchmarks. However, DANN's strength is in \textbf{learning adaptive representations}, not providing a stable metric for ranking shift across all domain pairs.
+
+\textbf{Conclusion for this problem.} Domain classifier is useful to check if source and target are separable in latent space, but since it depends on classifier capacity, optimization, and regularization, it should only be a \textbf{sanity check}, not the main shift score formula.
+
+\section{Final Conclusion for Use in Report}
+
+If a concise, tight write-up is needed following A/A* criteria, the Method section should conclude as follows:
+\begin{enumerate}[label=\arabic*.]
+    \item The problem is viewed as covariate shift under temporal nonstationarity;
+    \item Do not measure shift on raw summary features;
+    \item Use contextual representation in the spirit of TS-TCC \cite{tstcc};
+    \item Use \textbf{JMMD} \cite{jan} as the main representation shift because it is stronger than single-layer MMD;
+    \item Use \textbf{CORAL} \cite{coral} as supplementary dependency shift;
+    \item Use \textbf{DANN-style domain separability} \cite{dann} only as sanity check;
+    \item When presenting results, prioritize reporting \(D_{\mathrm{rep}}^{\mathrm{JMMD}}\) and \(D_{\mathrm{dep}}\) separately, then consider combining scores if ranking is needed.
+\end{enumerate}
+
+In summary, the answer to the initial question is: \textbf{yes}. If a better representation shift metric is desired, the report should shift from \textbf{MMD on a single final embedding} to \textbf{JMMD on multi-layer contextual features}; this is a choice that is both stronger representationally and cleaner citation-wise according to A/A* criteria.
+
+Why use JMMD, CORAL, and DANN for domain shift measurement, and why not use other views?
+
+JMMD is used because it measures representation shift across multiple layers, capturing hierarchical mismatches in temporal context, which is crucial for multivariate time series where shift occurs at different abstraction levels. CORAL is used as it measures dependency shift via covariance differences, complementing JMMD by focusing on second-order statistics that reflect sensor couplings. DANN is used as a sanity check for domain separability in latent space, ensuring the encoder does not trivially distinguish domains.
+
+Other views like plain MMD on a single layer are not used because they fail to capture multi-layer shifts, making them less rigorous for deep representations. Raw summary statistics or mean-std features are avoided as they ignore temporal context and latent geometry. Domain classifiers beyond DANN are not used as main metrics due to instability from optimization dependencies.
+
+\begin{thebibliography}{99}
+
+\bibitem{pan2010survey}
+Sinno Jialin Pan and Qiang Yang.
+\newblock A Survey on Transfer Learning.
+\newblock \emph{IEEE Transactions on Knowledge and Data Engineering}, 22(10):1345--1359, 2010.
+
+\bibitem{tstcc}
+Mingyue Cheng, Qi Liu, Zhiding Liu, and Enhong Chen.
+\newblock Temporal and Contextual Contrastive Learning for Vectorized Atari Game Representations.
+\newblock In \emph{International Conference on Learning Representations}, 2022.
+
+\bibitem{dann}
+Yaroslav Ganin and Victor Lempitsky.
+\newblock Unsupervised Domain Adaptation by Backpropagation.
+\newblock In \emph{Proceedings of the 32nd International Conference on Machine Learning}, 2015.
+
+\bibitem{jan}
+Mingsheng Long, Han Zhu, Jianmin Wang, and Michael I. Jordan.
+\newblock Deep Transfer Learning with Joint Adaptation Networks.
+\newblock In \emph{Proceedings of the 34th International Conference on Machine Learning}, 2017.
+
+\bibitem{coral}
+Baochen Sun, Jiashi Feng, and Kate Saenko.
+\newblock Return of Frustratingly Easy Domain Adaptation.
+\newblock In \emph{Proceedings of the AAAI Conference on Artificial Intelligence}, 2016.
+
+\end{thebibliography}
+
+\end{document}

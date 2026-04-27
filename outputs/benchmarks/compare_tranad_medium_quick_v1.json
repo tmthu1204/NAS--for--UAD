@@ -1,0 +1,112 @@
+{
+  "benchmark": "tranad_medium_quick_v1",
+  "machine": "machine-1-1",
+  "subset": {
+    "train_limit": 12000,
+    "test_start": 10000,
+    "test_limit": 12000,
+    "window_length": 10,
+    "epochs": 5,
+    "final_epochs": 5,
+    "search_candidates": 3,
+    "search_iters": 2
+  },
+  "tranad_upstream_arch": "TranADArchConfig(window_length=10, ff_dim=16, dropout=0.1, encoder_layers=1, decoder_layers=1, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+  "tranad_partial_fixed_arch": "TranADArchConfig(window_length=10, ff_dim=16, dropout=0.1, encoder_layers=1, decoder_layers=1, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+  "tranad_partial_best_arch": "TranADArchConfig(window_length=10, ff_dim=64, dropout=0.05, encoder_layers=1, decoder_layers=2, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+  "metrics": {
+    "ap": {
+      "upstream": 0.5641630183740968,
+      "fixed_baseline": 0.5641630183740968,
+      "partial_nas": 0.5715455001819431,
+      "delta_partial_minus_upstream": 0.007382481807846286
+    },
+    "auroc": {
+      "upstream": 0.8428577314342361,
+      "fixed_baseline": 0.8428577314342361,
+      "partial_nas": 0.8495487397693839,
+      "delta_partial_minus_upstream": 0.006691008335147797
+    },
+    "f1_best": {
+      "upstream": 0.661794871794872,
+      "fixed_baseline": 0.661794871794872,
+      "partial_nas": 0.6764666931532247,
+      "delta_partial_minus_upstream": 0.014671821358352766
+    },
+    "f1_pot": {
+      "upstream": 0.6368025751072961,
+      "fixed_baseline": 0.6368025751072961,
+      "partial_nas": 0.6189731190442327,
+      "delta_partial_minus_upstream": -0.01782945606306341
+    },
+    "event_f1": {
+      "upstream": 0.1111111111111111,
+      "fixed_baseline": 0.1111111111111111,
+      "partial_nas": 0.14492753623188406,
+      "delta_partial_minus_upstream": 0.03381642512077296
+    },
+    "delay_mean": {
+      "upstream": 0.0,
+      "fixed_baseline": 0.0,
+      "partial_nas": 0.0,
+      "delta_partial_minus_upstream": 0.0
+    }
+  },
+  "best_search_objective": 0.001223193469146101,
+  "search_history": [
+    {
+      "iter": 1,
+      "arch": "TranADArchConfig(window_length=10, ff_dim=64, dropout=0.05, encoder_layers=1, decoder_layers=2, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+      "objective": 0.001223193469146101,
+      "val_phase1_mse": 0.0016557185672140626,
+      "val_phase2_mse": 0.001223193469146101,
+      "val_loss": 0.0013096984887596933,
+      "val_score": 0.001223193469146101
+    },
+    {
+      "iter": 1,
+      "arch": "TranADArchConfig(window_length=10, ff_dim=16, dropout=0.05, encoder_layers=1, decoder_layers=1, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+      "objective": 0.002105948677328043,
+      "val_phase1_mse": 0.0020739515450290736,
+      "val_phase2_mse": 0.002105948677328043,
+      "val_loss": 0.0020995492508682494,
+      "val_score": 0.002105948677328043
+    },
+    {
+      "iter": 1,
+      "arch": "TranADArchConfig(window_length=10, ff_dim=64, dropout=0.2, encoder_layers=1, decoder_layers=2, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+      "objective": 0.0016297067854975028,
+      "val_phase1_mse": 0.0021112711127589147,
+      "val_phase2_mse": 0.001629706785497503,
+      "val_loss": 0.0017260196509497853,
+      "val_score": 0.0016297067854975028
+    },
+    {
+      "iter": 2,
+      "arch": "TranADArchConfig(window_length=10, ff_dim=16, dropout=0.05, encoder_layers=1, decoder_layers=1, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+      "objective": 0.0019063216407243229,
+      "val_phase1_mse": 0.0023393770002693936,
+      "val_phase2_mse": 0.0019063216407243229,
+      "val_loss": 0.0019929327126333375,
+      "val_score": 0.0019063216407243229
+    },
+    {
+      "iter": 2,
+      "arch": "TranADArchConfig(window_length=10, ff_dim=16, dropout=0.2, encoder_layers=1, decoder_layers=1, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+      "objective": 0.002404251670447577,
+      "val_phase1_mse": 0.002722082678934864,
+      "val_phase2_mse": 0.002404251670447577,
+      "val_loss": 0.0024678178721450348,
+      "val_score": 0.002404251670447577
+    },
+    {
+      "iter": 2,
+      "arch": "TranADArchConfig(window_length=10, ff_dim=64, dropout=0.2, encoder_layers=2, decoder_layers=1, batch_size=128, max_epoch=5, valid_ratio=0.2, lr=0.0001)",
+      "objective": 0.0020952911843431224,
+      "val_phase1_mse": 0.002713538617750788,
+      "val_phase2_mse": 0.0020952911843431224,
+      "val_loss": 0.0022189406710246564,
+      "val_score": 0.0020952911843431224
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "family": "usad_upstream",
+  "protocol": "raw_swat_normal_attack_subset",
+  "repo_dir": "D:\\Papers\\NAS--for--UAD\\external\\usad_upstream",
+  "train_csv": "data\\SWaT\\medium_quick\\normal_medium.csv",
+  "test_csv": "data\\SWaT\\medium_quick\\test_mixed_medium.csv",
+  "subset": {
+    "downsample": 5,
+    "train_limit": 0,
+    "test_limit": 0,
+    "preprocess": "train_minmax",
+    "window_length": 12,
+    "stride": 1,
+    "valid_ratio": 0.2
+  },
+  "upstream_config": {
+    "epochs": 6,
+    "batch_size": 512,
+    "hidden_size": 100,
+    "w_size": 612,
+    "z_size": 1200
+  },
+  "search_train_curve": [
+    {
+      "val_loss1": 0.03551502153277397,
+      "val_loss2": 0.03541578724980354
+    },
+    {
+      "val_loss1": 0.03762555867433548,
+      "val_loss2": -0.004043104592710733
+    },
+    {
+      "val_loss1": 0.039010170847177505,
+      "val_loss2": -0.016121406108140945
+    },
+    {
+      "val_loss1": 0.03489577770233154,
+      "val_loss2": -0.019332993775606155
+    },
+    {
+      "val_loss1": 0.03693150728940964,
+      "val_loss2": -0.024130407720804214
+    },
+    {
+      "val_loss1": 0.03891609236598015,
+      "val_loss2": -0.027255309745669365
+    }
+  ],
+  "final_train_curve": [
+    {
+      "val_loss1": 0.026652175933122635,
+      "val_loss2": 0.026881325989961624
+    },
+    {
+      "val_loss1": 0.028091102838516235,
+      "val_loss2": -0.003098099259659648
+    },
+    {
+      "val_loss1": 0.03308265283703804,
+      "val_loss2": -0.020230747759342194
+    },
+    {
+      "val_loss1": 0.04195171967148781,
+      "val_loss2": -0.029970725998282433
+    },
+    {
+      "val_loss1": 0.03834637627005577,
+      "val_loss2": -0.031021712347865105
+    },
+    {
+      "val_loss1": 0.03946157544851303,
+      "val_loss2": -0.03365788981318474
+    }
+  ],
+  "metrics_uad": {
+    "ap": 0.8517445099949071,
+    "auroc": 0.8108992726581884,
+    "f1_pot": 0.6939759036144578,
+    "precision_pot": 0.8722867238768299,
+    "recall_pot": 0.5761920640213405,
+    "thr_pot": 0.10382597863674163,
+    "f1_best": 0.7474486500452138,
+    "precision_best": 0.6100801349641501,
+    "recall_best": 0.9646548849616539,
+    "thr_best": 0.027449127286672592,
+    "event_f1": 0.4,
+    "event_precision": 0.25,
+    "event_recall": 1.0,
+    "delay_mean": 0.0,
+    "delay_median": 0.0
+  }
+}
