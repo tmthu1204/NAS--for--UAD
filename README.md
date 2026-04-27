@@ -9,12 +9,13 @@ This repository implements a UAD-oriented neural architecture search pipeline fo
 The current codebase supports two modes:
 
 - `uad_source`: source-only UAD using `train_normal` and DeepSVDD scoring
-- `adaptnas_combined`: source-normal plus unlabeled target-pool adaptation with reliability-aware weighting
+- `adaptnas_combined`: source-normal plus unlabeled target-pool adaptation with reliability-aware weighting and unlabeled bi-level search
 
 It also now supports multiple model families:
 
 - `default_nasade`: the current TS-TCC + CNN/Transformer-GRU-TCN + DeepSVDD / AdaptNAS pipeline
 - `omni_anomaly`: paper-faithful OmniAnomaly family for raw SMD machine-by-machine source-only runs
+- `usad`: paper-style USAD family for raw SWaT source-only runs with fixed-baseline vs partial-NAS comparison
 
 ## What Is Implemented
 
@@ -22,7 +23,7 @@ The current implementation now aligns with the intended project design in three 
 
 - TS-TCC pretraining is used to initialize candidate encoders before search/final training instead of being trained and then ignored.
 - `arch_params` now affect the actual forward pass by weighting encoder-depth features.
-- Combined mode supports a separate `target_pool_unlabeled.npz`, so target adaptation no longer has to reuse `val_mixed`.
+- Combined mode now requires a separate `target_pool_unlabeled.npz`, so architecture search no longer reuses labeled validation data as target adaptation input.
 
 ## Project Layout
 
@@ -31,6 +32,7 @@ src/
   pipeline.py                # main end-to-end entrypoint
   data/
     omni_smd.py              # raw SMD loader + sliding-window helpers for Omni family
+    swat.py                  # raw SWaT loader + flatten-window helpers for USAD family
   adaptnas/
     search_space.py          # discrete search space sampling
     trainer.py               # bilevel training loop
@@ -94,6 +96,7 @@ Current families:
 
 - `default_nasade`
 - `omni_anomaly`
+- `usad`
 
 Current Omni family scope:
 
@@ -105,6 +108,15 @@ Current Omni family scope:
 - includes planar normalizing flows in the posterior path
 - supports Monte Carlo test-time scoring via `--omni_test_n_z`
 - uses Omni-style adjusted best-F1 / POT-like evaluation on normal-score thresholds
+
+Current USAD family scope:
+
+- implemented only for `uad_source`
+- runs on raw SWaT normal/attack CSV files
+- follows the original encoder + two-decoder adversarial training recipe
+- freezes the core USAD macro-architecture and searches only a small width/bottleneck subspace
+- reports both the fixed paper-style baseline and a searched partial-NAS variant
+- uses window-level flattened inputs with last-point label alignment for evaluation
 
 For paper-faithful Omni runs, prefer raw SMD over the `.npz` UAD protocol.
 
@@ -124,24 +136,16 @@ train_normal.npz,val_mixed.npz[,test_mixed.npz]
 
 ### 2. `adaptnas_combined`
 
-Recommended protocol:
+Required protocol:
 
 ```text
 train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz[,test_mixed.npz]
 ```
 
 - `train_normal.npz`: normal-only source windows
-- `target_pool_unlabeled.npz`: unlabeled target windows used only for adaptation/weighting
-- `val_mixed.npz`: labeled mixed split for upper-level selection
+- `target_pool_unlabeled.npz`: unlabeled target windows used for adaptation, weighting, and unlabeled upper-level architecture search
+- `val_mixed.npz`: labeled mixed split used only for evaluation/model selection after training, not for architecture-gradient updates
 - `test_mixed.npz`: optional labeled evaluation split
-
-Legacy fallback is still supported:
-
-```text
-train_normal.npz,val_mixed.npz,test_mixed.npz
-```
-
-In that fallback, `val_mixed` is reused as the target pool and a warning is printed.
 
 ## Data Preparation
 
@@ -155,6 +159,26 @@ data/ServerMachineDataset/
   test/
   test_label/
 ```
+
+You do not need to build `train_normal.npz` / `val_mixed.npz` / `test_mixed.npz` for this family.
+
+### Raw SWaT for `family=usad`
+
+The USAD family reads the original SWaT CSV protocol directly:
+
+```text
+data/SWaT/
+  SWaT_Dataset_Normal_v1.csv
+  SWaT_Dataset_Attack_v0.csv
+```
+
+It follows the public USAD notebook preprocessing:
+
+- read the normal CSV and the attack CSV
+- drop `Timestamp` and `Normal/Attack`
+- convert locale-formatted decimal strings to floats
+- fit `MinMaxScaler` on the normal train split and transform the attack split
+- optionally downsample the series before building windows
 
 You do not need to build `train_normal.npz` / `val_mixed.npz` / `test_mixed.npz` for this family.
 
@@ -310,6 +334,22 @@ python -m src.pipeline \
   --device cuda
 ```
 
+### USAD family on raw SWaT
+
+```bash
+python -m src.pipeline \
+  --mode uad_source \
+  --family usad \
+  --swat_train_csv data/SWaT/SWaT_Dataset_Normal_v1.csv \
+  --swat_test_csv data/SWaT/SWaT_Dataset_Attack_v0.csv \
+  --search_candidates 10 \
+  --usad_window_length 12 \
+  --usad_downsample 5 \
+  --usad_latent_size 40 \
+  --usad_batch_size 128 \
+  --device cuda
+```
+
 ### Run a generated experiment folder with `run.ps1`
 
 Temporal-shift example:
@@ -330,6 +370,12 @@ OmniAnomaly family example:
 .\run.ps1 -Mode uad_source -Family omni_anomaly -RawSmdRoot data\ServerMachineDataset -Machine machine-1-1
 ```
 
+USAD family example:
+
+```powershell
+.\run.ps1 -Mode uad_source -Family usad -SwatTrainCsv data\SWaT\SWaT_Dataset_Normal_v1.csv -SwatTestCsv data\SWaT\SWaT_Dataset_Attack_v0.csv
+```
+
 Batch-run a few raw SMD machines with the Omni family:
 
 ```bash
@@ -338,6 +384,16 @@ python scripts/run_all_smd.py \
   --family omni_anomaly \
   --raw_smd_root data/ServerMachineDataset \
   --machines machine-1-1,machine-1-2
+```
+
+Save a USAD-on-SWaT run into `outputs/benchmarks/...`:
+
+```bash
+python scripts/run_usad_swat.py \
+  --train_csv data/SWaT/SWaT_Dataset_Normal_v1.csv \
+  --test_csv data/SWaT/SWaT_Dataset_Attack_v0.csv \
+  --search_candidates 10 \
+  --tag swat_partial
 ```
 
 ## End-to-End Flow
@@ -388,6 +444,21 @@ For each raw SMD machine:
 
 Final anomaly scores are the negative last-point reconstruction log-probabilities on sliding windows with last-point alignment.
 
+### `uad_source` with `family=usad`
+
+For raw SWaT:
+
+1. Load the raw normal and attack CSV files
+2. Drop `Timestamp` / `Normal/Attack`, convert numeric strings, and fit train-only normalization
+3. Downsample the series if requested, then split raw train contiguously into inner-train / inner-validation
+4. Train the fixed paper-style USAD baseline
+5. Sample partial-NAS USAD architectures around the fixed encoder/decoder family
+   Only `latent_size` and an overall hidden-width scale are searched; the encoder/decoder topology, adversarial losses, and anomaly score remain fixed to the USAD design.
+6. Select by the smallest validation anomaly score on the inner-validation normal series
+7. Refit/evaluate on the full normalized SWaT train / attack split
+
+Final anomaly scores are `alpha * MSE(x, w1) + beta * MSE(x, w3)` on flattened sliding windows with last-point label alignment.
+
 ### `adaptnas_combined`
 
 For each sampled architecture:
@@ -398,11 +469,13 @@ For each sampled architecture:
 4. Run lower-level training with:
    - source CE
    - weighted target entropy minimization
-   - GRL-based domain loss
-5. Run upper-level updates on labeled validation loaders
-6. Select by target validation AUROC, then validation accuracy
+   - GRL-based domain loss with weighted target contribution
+5. Run upper-level updates on:
+   - source holdout normal windows
+   - unlabeled weighted target-pool windows
+6. Select the architecture by the unlabeled upper objective, not by target labels
 
-Final anomaly scores are `P(y=1 | x)` from the trained classifier.
+Final anomaly scores are SVDD distances on the adapted selected architecture.
 
 ## Metrics
 
@@ -445,7 +518,35 @@ Run all generated experiment folders under a custom root:
 python scripts/run_all_smd.py --mode adaptnas_combined --data_root data/smd_experiments/cross_machine_medium
 ```
 
-If `target_pool_unlabeled.npz` exists, the batch runner uses the 4-file protocol automatically.
+For `adaptnas_combined`, the batch runner now expects the full 4-file protocol and skips folders that do not contain `target_pool_unlabeled.npz`.
+
+To run only a few generated `default_nasade` experiment folders, use `--cases`:
+
+```bash
+python scripts/run_all_smd.py \
+  --mode uad_source \
+  --family default_nasade \
+  --data_root data/smd_experiments/cross_machine_medium \
+  --cases machine-1-1__to__machine-1-2,machine-1-1__to__machine-1-6
+```
+
+### Compare `uad_source` vs `adaptnas_combined`
+
+Run both modes on the same benchmark folders, then compare the saved benchmark outputs:
+
+```bash
+python scripts/run_all_smd.py --mode uad_source --family default_nasade --data_root data/smd_experiments/cross_machine_medium --tag cross_medium_source
+python scripts/run_all_smd.py --mode adaptnas_combined --family default_nasade --data_root data/smd_experiments/cross_machine_medium --tag cross_medium_combined
+```
+
+```bash
+python scripts/compare_mode_benchmarks.py \
+  --source_dirs outputs/benchmarks/default_nasade-uad_source-cross_medium_source \
+  --combined_dirs outputs/benchmarks/default_nasade-adaptnas_combined-cross_medium_combined \
+  --out outputs/benchmarks/compare_cross_medium.json
+```
+
+You can compare multiple shift roots together by passing comma-separated benchmark directories to `--source_dirs` and `--combined_dirs`, for example to summarize `cross_machine_medium` and `cross_machine_hard` together.
 
 ## Notes
 
@@ -453,6 +554,8 @@ If `target_pool_unlabeled.npz` exists, the batch runner uses the 4-file protocol
 - `scripts/run_pipeline.sh` and `scripts/run_all_smd.py` now use the current CLI based on `--mode`.
 - `omni_anomaly` currently supports paper-faithful `uad_source` on raw SMD machine-by-machine runs.
 - `omni_anomaly` does not yet support `adaptnas_combined`.
-- Combined mode is most meaningful when `target_pool_unlabeled` is separated from `val_mixed` and `test_mixed`.
+- `usad` currently supports paper-style `uad_source` on raw SWaT runs.
+- `usad` does not yet support `adaptnas_combined`.
+- Combined mode now keeps `target_pool_unlabeled` strictly separate from `val_mixed` and `test_mixed` to avoid target-label leakage during architecture search.
 - For domain-shift experiments, prefer the new `data/smd_experiments/...` folders instead of overwriting the original `data/smd/machine-*` directories.
 - Cross-machine experiments are a valid domain-shift setting in SMD because the feature schema is aligned, while the machine operating distributions can differ substantially.

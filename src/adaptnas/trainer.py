@@ -20,7 +20,8 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
                   lr_inner=1e-3, lr_arch=1e-3, grl_sched='exp',
                   log_dir="outputs/figures", tag="train_curve",
                   use_rot_align=False,
-                  use_cosine_decay=True, early_stop=True, patience=5, ckpt_path=None):
+                  use_cosine_decay=True, early_stop=True, patience=5, ckpt_path=None,
+                  upper_source_loader=None, upper_target_loader=None, upper_beta_gap=1.0):
 
     model.to(device)
     model.train()
@@ -57,7 +58,7 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
         opt.opt_d, T_max=steps
     ) if use_cosine_decay else None
 
-    best_val_acc = -1.0
+    best_upper_score = float("inf")
     best_state = None
     stale = 0
 
@@ -185,21 +186,47 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
         loss_log.append(loss_lower.item())
 
         if (step + 1) % 20 == 0 or step == steps - 1:
-            val_score = opt.step_upper(val_loader, alpha)
-            val_acc = 1.0 - val_score
-            val_log.append(val_acc)
-            print(f"[BiLevel] step {step+1}/{steps} | train_loss={loss_lower:.4f} | val_acc={val_acc:.4f}")
+            if upper_source_loader is not None and upper_target_loader is not None:
+                upper_stats = opt.step_upper_unlabeled(
+                    upper_source_loader,
+                    upper_target_loader,
+                    alpha=alpha,
+                    beta_gap=upper_beta_gap,
+                )
+                upper_obj = float(upper_stats["upper_obj"])
+                val_log.append(upper_obj)
+                print(
+                    f"[BiLevel] step {step+1}/{steps} | train_loss={loss_lower:.4f} "
+                    f"| upper_obj={upper_obj:.4f} "
+                    f"(src={upper_stats['src_obj']:.4f}, tgt={upper_stats['tgt_obj']:.4f}, gap={upper_stats['gap_obj']:.4f})"
+                )
 
-            if early_stop:
-                if val_acc > best_val_acc:
-                    best_val_acc = val_acc
-                    best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-                    stale = 0
-                else:
-                    stale += 1
-                if stale >= patience:
-                    print(f"[BiLevel] Early stop at step {step+1}, best_val_acc={best_val_acc:.4f}")
-                    break
+                if early_stop:
+                    if upper_obj < best_upper_score:
+                        best_upper_score = upper_obj
+                        best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+                        stale = 0
+                    else:
+                        stale += 1
+                    if stale >= patience:
+                        print(f"[BiLevel] Early stop at step {step+1}, best_upper_obj={best_upper_score:.4f}")
+                        break
+            else:
+                val_score = opt.step_upper(val_loader, alpha)
+                val_acc = 1.0 - val_score
+                val_log.append(val_acc)
+                print(f"[BiLevel] step {step+1}/{steps} | train_loss={loss_lower:.4f} | val_acc={val_acc:.4f}")
+
+                if early_stop:
+                    if val_acc > (1.0 - best_upper_score):
+                        best_upper_score = 1.0 - val_acc
+                        best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+                        stale = 0
+                    else:
+                        stale += 1
+                    if stale >= patience:
+                        print(f"[BiLevel] Early stop at step {step+1}, best_val_acc={1.0 - best_upper_score:.4f}")
+                        break
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -210,14 +237,16 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
     plot_curve(list(range(len(loss_log))), loss_log,
                os.path.join(log_dir, f"{tag}_loss.png"), title="Train Loss")
     if val_log:
+        curve_title = "Upper Objective" if (upper_source_loader is not None and upper_target_loader is not None) else "Validation Accuracy"
+        curve_file = f"{tag}_upper_obj.png" if (upper_source_loader is not None and upper_target_loader is not None) else f"{tag}_val_acc.png"
         plot_curve(
             list(range(0, len(loss_log), max(1, len(loss_log)//len(val_log)))),
             val_log,
-            os.path.join(log_dir, f"{tag}_val_acc.png"),
-            title="Validation Accuracy"
+            os.path.join(log_dir, curve_file),
+            title=curve_title
         )
 
-    return {"train_loss": loss_log, "val_acc": val_log}
+    return {"train_loss": loss_log, "upper_obj": val_log}
 
 
 def quick_validate(model, dl, device):

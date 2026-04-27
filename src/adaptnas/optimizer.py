@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from ..utils.schedulers import exp_grl, cosine_grl
 
 class AdaptNASOptimizer:
@@ -83,7 +84,15 @@ class AdaptNASOptimizer:
         # ----- Domain loss -----
         dlab_s = torch.zeros(d_s.size(0), dtype=torch.long, device=self.device)
         dlab_t = torch.ones(d_t.size(0), dtype=torch.long, device=self.device)
-        loss_d = self.ce(d_s, dlab_s) + self.ce(d_t, dlab_t)
+        loss_d_s = self.ce(d_s, dlab_s)
+        if yt_w is not None:
+            ce_t_domain = F.cross_entropy(d_t, dlab_t, reduction='none')
+            w_dom = yt_w.clamp_min(0.0)
+            w_dom = w_dom / (w_dom.mean().detach() + 1e-8)
+            loss_d_t = (w_dom * ce_t_domain).mean()
+        else:
+            loss_d_t = self.ce(d_t, dlab_t)
+        loss_d = loss_d_s + loss_d_t
 
         # ----- Combined lower-level objective -----
         loss_lower = self.alpha * (loss_s - loss_d) + (1 - self.alpha) * loss_t
@@ -226,5 +235,133 @@ class AdaptNASOptimizer:
         tgt_err = self._eval_error_on_loader(val_tgt_loader)
         hyb_err = alpha * src_err + (1 - alpha) * tgt_err
         return {'src_err': src_err, 'tgt_err': tgt_err, 'hybrid_err': hyb_err}
+
+    def _target_batch_parts(self, batch):
+        if isinstance(batch, (tuple, list)):
+            if len(batch) == 1:
+                return batch[0], None
+            if len(batch) == 2:
+                second = batch[1]
+                if isinstance(second, torch.Tensor) and second.dtype in (torch.long, torch.int64, torch.int32):
+                    return batch[0], None
+                return batch[0], second
+            return batch[0], batch[-1]
+        if isinstance(batch, dict):
+            xb = batch.get("x") or batch.get("input") or list(batch.values())[0]
+            wt = batch.get("w") or batch.get("weight")
+            return xb, wt
+        return batch, None
+
+    def _source_batch_x(self, batch):
+        if isinstance(batch, (tuple, list)):
+            return batch[0]
+        if isinstance(batch, dict):
+            return batch.get("x") or batch.get("input") or list(batch.values())[0]
+        return batch
+
+    def _feature_compactness(self, feats):
+        center = feats.mean(dim=0, keepdim=True)
+        return ((feats - center) ** 2).sum(dim=1).mean()
+
+    def _weighted_feature_gap(self, src_feats, tgt_feats, tgt_w=None):
+        src_mean = src_feats.mean(dim=0)
+        if tgt_w is None:
+            tgt_mean = tgt_feats.mean(dim=0)
+        else:
+            tgt_w = tgt_w.to(tgt_feats.device).float().clamp_min(0.0)
+            tgt_w = tgt_w / (tgt_w.sum().detach() + 1e-8)
+            tgt_mean = (tgt_feats * tgt_w.unsqueeze(1)).sum(dim=0)
+        return ((src_mean - tgt_mean) ** 2).mean()
+
+    def _weighted_entropy(self, logits, tgt_w=None):
+        pt = torch.softmax(logits, dim=1).clamp_min(1e-8)
+        ent = -(pt * torch.log(pt)).sum(dim=1)
+        if tgt_w is None:
+            return ent.mean()
+        tgt_w = tgt_w.to(logits.device).float().clamp_min(0.0)
+        tgt_w = tgt_w / (tgt_w.mean().detach() + 1e-8)
+        return (tgt_w * ent).mean()
+
+    def evaluate_upper_unlabeled(self, src_loader, tgt_loader, alpha=0.5, beta_gap=1.0):
+        self.model.eval()
+        src_terms, tgt_terms, gap_terms = [], [], []
+        with torch.no_grad():
+            it_src = iter(src_loader)
+            it_tgt = iter(tgt_loader)
+            n_iter = min(len(src_loader), len(tgt_loader))
+            for _ in range(n_iter):
+                xb_s = self._source_batch_x(next(it_src)).to(self.device)
+                xb_t, wt_t = self._target_batch_parts(next(it_tgt))
+                xb_t = xb_t.to(self.device)
+                if wt_t is not None:
+                    wt_t = wt_t.to(self.device)
+
+                fs = self.model.forward_features(xb_s)
+                ft = self.model.forward_features(xb_t)
+                logits_t, _ = self.model(xb_t, lambda_gr=0.0)
+
+                src_terms.append(float(self._feature_compactness(fs).cpu().item()))
+                tgt_terms.append(float(self._weighted_entropy(logits_t, wt_t).cpu().item()))
+                gap_terms.append(float(self._weighted_feature_gap(fs, ft, wt_t).cpu().item()))
+
+        src_obj = float(sum(src_terms) / max(1, len(src_terms)))
+        tgt_obj = float(sum(tgt_terms) / max(1, len(tgt_terms)))
+        gap_obj = float(sum(gap_terms) / max(1, len(gap_terms)))
+        upper_obj = alpha * src_obj + (1.0 - alpha) * tgt_obj + beta_gap * gap_obj
+        return {
+            'src_obj': src_obj,
+            'tgt_obj': tgt_obj,
+            'gap_obj': gap_obj,
+            'upper_obj': float(upper_obj),
+        }
+
+    def step_upper_unlabeled(self, src_loader, tgt_loader, alpha=0.5, beta_gap=1.0):
+        """
+        Update ONLY architecture params with an unlabeled upper objective:
+          - source holdout compactness
+          - weighted target entropy
+          - weighted source/target feature-gap alignment
+        """
+        if self.opt_arch is None:
+            return {'src_obj': 0.0, 'tgt_obj': 0.0, 'gap_obj': 0.0, 'upper_obj': 0.0}
+
+        self.model.train()
+        src_terms, tgt_terms, gap_terms, upper_terms = [], [], [], []
+
+        it_src = iter(src_loader)
+        it_tgt = iter(tgt_loader)
+        n_iter = min(len(src_loader), len(tgt_loader))
+
+        for _ in range(n_iter):
+            xb_s = self._source_batch_x(next(it_src)).to(self.device)
+            xb_t, wt_t = self._target_batch_parts(next(it_tgt))
+            xb_t = xb_t.to(self.device)
+            if wt_t is not None:
+                wt_t = wt_t.to(self.device)
+
+            fs = self.model.forward_features(xb_s)
+            ft = self.model.forward_features(xb_t)
+            logits_t, _ = self.model(xb_t, lambda_gr=0.0)
+
+            src_obj = self._feature_compactness(fs)
+            tgt_obj = self._weighted_entropy(logits_t, wt_t)
+            gap_obj = self._weighted_feature_gap(fs, ft, wt_t)
+            upper_loss = alpha * src_obj + (1.0 - alpha) * tgt_obj + beta_gap * gap_obj
+
+            self.opt_arch.zero_grad()
+            upper_loss.backward()
+            self.opt_arch.step()
+
+            src_terms.append(float(src_obj.detach().cpu().item()))
+            tgt_terms.append(float(tgt_obj.detach().cpu().item()))
+            gap_terms.append(float(gap_obj.detach().cpu().item()))
+            upper_terms.append(float(upper_loss.detach().cpu().item()))
+
+        return {
+            'src_obj': float(sum(src_terms) / max(1, len(src_terms))),
+            'tgt_obj': float(sum(tgt_terms) / max(1, len(tgt_terms))),
+            'gap_obj': float(sum(gap_terms) / max(1, len(gap_terms))),
+            'upper_obj': float(sum(upper_terms) / max(1, len(upper_terms))),
+        }
 
 

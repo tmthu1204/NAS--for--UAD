@@ -9,6 +9,24 @@ from .omni_anomaly import (
     train_omni_source,
     validate_omni_on_series,
 )
+from .usad import (
+    UsadArchConfig,
+    UsadModel,
+    get_fixed_paper_usad_arch,
+    sample_usad_arch,
+    score_usad_series,
+    train_usad_source,
+    validate_usad_on_series,
+)
+from .tranad import (
+    TranADArchConfig,
+    TranADModel,
+    get_fixed_paper_tranad_arch,
+    sample_tranad_arch,
+    score_tranad_series,
+    train_tranad_source,
+    validate_tranad_on_series,
+)
 
 __all__ = [
     "OmniArchConfig",
@@ -18,4 +36,18 @@ __all__ = [
     "score_omni_series",
     "train_omni_source",
     "validate_omni_on_series",
+    "UsadArchConfig",
+    "UsadModel",
+    "get_fixed_paper_usad_arch",
+    "sample_usad_arch",
+    "score_usad_series",
+    "train_usad_source",
+    "validate_usad_on_series",
+    "TranADArchConfig",
+    "TranADModel",
+    "get_fixed_paper_tranad_arch",
+    "sample_tranad_arch",
+    "score_tranad_series",
+    "train_tranad_source",
+    "validate_tranad_on_series",
 ]

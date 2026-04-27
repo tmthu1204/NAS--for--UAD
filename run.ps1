@@ -3,12 +3,14 @@ param(
     [ValidateSet('uad_source', 'adaptnas_combined')]
     [string]$Mode,
 
-    [ValidateSet('default_nasade', 'omni_anomaly')]
+    [ValidateSet('default_nasade', 'omni_anomaly', 'usad')]
     [string]$Family = 'default_nasade',
     
     [string]$DataDir = '',
     [string]$RawSmdRoot = 'data/ServerMachineDataset',
     [string]$Machine = 'machine-1-1',
+    [string]$SwatTrainCsv = 'data/SWaT/SWaT_Dataset_Normal_v1.csv',
+    [string]$SwatTestCsv = 'data/SWaT/SWaT_Dataset_Attack_v0.csv',
     [int]$EpochsPretrain = 50,
     [int]$SearchCandidates = 20,
     [int]$BatchSize = 128,
@@ -31,6 +33,26 @@ param(
     [switch]$OmniFixedOnly,
     [double]$OmniPotQ = 0.0,
     [double]$OmniPotLevel = 0.0,
+    [int]$UsadEpochs = 70,
+    [int]$UsadFinalEpochs = 70,
+    [double]$UsadLr = 0.001,
+    [int]$UsadPatience = 5,
+    [int]$UsadWindowLength = 12,
+    [double]$UsadValidRatio = 0.2,
+    [int]$UsadBatchSize = 128,
+    [int]$UsadStride = 1,
+    [int]$UsadDownsample = 5,
+    [int]$UsadLatentSize = 40,
+    [int]$UsadSearchIters = 3,
+    [int]$UsadTrainLimit = 0,
+    [int]$UsadTestLimit = 0,
+    [double]$UsadScoreAlpha = 0.5,
+    [double]$UsadScoreBeta = 0.5,
+    [ValidateSet('train_minmax', 'train_zscore')]
+    [string]$UsadPreprocess = 'train_minmax',
+    [switch]$UsadFixedOnly,
+    [double]$UsadPotQ = 0.001,
+    [double]$UsadPotLevel = 0.99,
     [ValidateSet('auto', 'cpu', 'cuda')]
     [string]$Device = 'auto'
 )
@@ -153,6 +175,42 @@ $Command = @(
     $OmniPotQ
     '--omni_pot_level'
     $OmniPotLevel
+    '--usad_epochs'
+    $UsadEpochs
+    '--usad_final_epochs'
+    $UsadFinalEpochs
+    '--usad_lr'
+    $UsadLr
+    '--usad_patience'
+    $UsadPatience
+    '--usad_window_length'
+    $UsadWindowLength
+    '--usad_valid_ratio'
+    $UsadValidRatio
+    '--usad_batch_size'
+    $UsadBatchSize
+    '--usad_stride'
+    $UsadStride
+    '--usad_downsample'
+    $UsadDownsample
+    '--usad_latent_size'
+    $UsadLatentSize
+    '--usad_search_iters'
+    $UsadSearchIters
+    '--usad_train_limit'
+    $UsadTrainLimit
+    '--usad_test_limit'
+    $UsadTestLimit
+    '--usad_score_alpha'
+    $UsadScoreAlpha
+    '--usad_score_beta'
+    $UsadScoreBeta
+    '--usad_preprocess'
+    $UsadPreprocess
+    '--usad_pot_q'
+    $UsadPotQ
+    '--usad_pot_level'
+    $UsadPotLevel
     '--device'
     $ResolvedDevice
 )
@@ -166,6 +224,17 @@ if ($Family -eq 'omni_anomaly') {
     )
     if ($OmniFixedOnly) {
         $Command += '--omni_fixed_only'
+    }
+}
+elseif ($Family -eq 'usad') {
+    $Command += @(
+        '--swat_train_csv'
+        $SwatTrainCsv
+        '--swat_test_csv'
+        $SwatTestCsv
+    )
+    if ($UsadFixedOnly) {
+        $Command += '--usad_fixed_only'
     }
 }
 else {
@@ -187,6 +256,10 @@ Write-Host "Family: $Family" -ForegroundColor Yellow
 if ($Family -eq 'omni_anomaly') {
     Write-Host "Raw SMD root: $RawSmdRoot" -ForegroundColor Yellow
     Write-Host "Machine: $Machine" -ForegroundColor Yellow
+}
+elseif ($Family -eq 'usad') {
+    Write-Host "SWaT train CSV: $SwatTrainCsv" -ForegroundColor Yellow
+    Write-Host "SWaT test CSV: $SwatTestCsv" -ForegroundColor Yellow
 }
 elseif (-not [string]::IsNullOrWhiteSpace($DataDir)) {
     Write-Host "Data directory: $DataDir" -ForegroundColor Yellow

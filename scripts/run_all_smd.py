@@ -149,17 +149,11 @@ def build_dataset_arg(machine_dir, mode):
     if not have(train_n, val_m):
         return None
 
-    if os.path.exists(target_pool):
-        parts = [train_n, target_pool, val_m]
-        if os.path.exists(test_m):
-            parts.append(test_m)
+    if have(train_n, target_pool, val_m, test_m):
+        parts = [train_n, target_pool, val_m, test_m]
         return ",".join(os.path.relpath(p, PROJ) for p in parts)
 
-    if os.path.exists(test_m):
-        print(f"[WARN] {os.path.basename(machine_dir)} has no target_pool_unlabeled.npz; using legacy 3-file fallback.")
-        parts = [train_n, val_m, test_m]
-        return ",".join(os.path.relpath(p, PROJ) for p in parts)
-
+    print(f"[WARN] {os.path.basename(machine_dir)} is missing required 4-file combined protocol.")
     return None
 
 
@@ -173,6 +167,14 @@ def main():
     ap.add_argument("--data_root", default=os.path.join(PROJ, "data", "smd"))
     ap.add_argument("--raw_smd_root", default=os.path.join(PROJ, "data", "ServerMachineDataset"))
     ap.add_argument("--machines", default="", help="Comma-separated machine ids for omni_anomaly, e.g. machine-1-1,machine-1-2")
+    ap.add_argument(
+        "--cases",
+        default="",
+        help=(
+            "Comma-separated experiment folder names for default_nasade, "
+            "e.g. machine-1-1__to__machine-1-2,machine-1-1__to__machine-1-6"
+        ),
+    )
     ap.add_argument("--omni_epochs", default="20")
     ap.add_argument("--omni_final_epochs", default="20")
     ap.add_argument("--omni_lr", default="0.001")
@@ -275,6 +277,9 @@ def main():
         data_root = args.data_root
         machine_dirs = [os.path.join(data_root, d) for d in os.listdir(data_root) if os.path.isdir(os.path.join(data_root, d))]
         machine_dirs.sort()
+        if args.cases.strip():
+            keep = {c.strip() for c in args.cases.split(",") if c.strip()}
+            machine_dirs = [p for p in machine_dirs if os.path.basename(p) in keep]
         if not machine_dirs:
             print(f"No subfolders under {data_root}")
             sys.exit(1)

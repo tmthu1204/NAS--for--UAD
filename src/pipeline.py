@@ -3,10 +3,11 @@ Top-level orchestrator (UAD project):
 
 - TS-TCC pretrain
 - (Mode A) adaptnas_combined:
-    * input: train_normal.npz, target_pool_unlabeled.npz, val_mixed.npz[, test_mixed.npz]
-      legacy fallback: train_normal.npz, val_mixed.npz[, test_mixed.npz]
+    * input: train_normal.npz, target_pool_unlabeled.npz, val_mixed.npz, test_mixed.npz
     * SVDD-weighting on TARGET POOL using SVDD fitted on SOURCE normal (train_normal)
-    * bilevel AdaptNAS search (kept as your current logic: warmup -> SVDD weights -> train_bilevel -> upper step)
+    * bilevel AdaptNAS search with:
+        - lower level on source normal + unlabeled weighted target pool
+        - upper level on source holdout normal + unlabeled weighted target pool
     * final-only baselines (Base_* + NAS_BestArch) with same weighting
     * report UAD metrics on test_mixed if provided else on val_mixed
 
@@ -39,6 +40,9 @@ from src.data.omni_smd import (
     aligned_last_point_labels,
     contiguous_train_valid_split,
 )
+from src.data.swat import RawSWaTDataset
+from src.data.swat import build_upstream_usad_flat_windows, build_upstream_usad_window_labels
+from src.data.tranad_smd import build_tranad_windows, load_raw_tranad_smd_machine
 from src.ts_tcc.trainer.trainer import TSTrainer
 from src.adaptnas.search_space import sample_arch
 from src.adaptnas.trainer import train_bilevel
@@ -49,6 +53,22 @@ from src.families.omni_anomaly import (
     train_omni_source,
     validate_omni_on_series,
     score_omni_series,
+)
+from src.families.usad import (
+    UsadModel,
+    get_fixed_paper_usad_arch,
+    sample_usad_arch,
+    train_usad_source,
+    validate_usad_on_windows,
+    score_usad_windows,
+)
+from src.families.tranad import (
+    TranADModel,
+    get_fixed_paper_tranad_arch,
+    sample_tranad_arch,
+    train_tranad_source,
+    validate_tranad_on_windows,
+    score_tranad_windows,
 )
 from src.families.omni_eval import bf_search as omni_bf_search, pot_eval as omni_pot_eval
 
@@ -189,6 +209,23 @@ def build_validation(ds_source, ds_target, beta=0.5, m=200, bs=64, seed=42, fixe
 
     beta_eff = len(ys_val) / max(1, len(yhyb))
     return val_hybrid, s_idx, val_src, val_tgt, beta_eff
+
+
+def split_source_holdout_normal(X_source, holdout_ratio=0.2, seed=42):
+    rng = np.random.RandomState(seed)
+    perm = rng.permutation(len(X_source))
+    n_hold = max(1, int(round(len(X_source) * holdout_ratio)))
+    idx_hold = perm[:n_hold]
+    idx_train = perm[n_hold:] if n_hold < len(X_source) else perm[:max(1, len(X_source) // 2)]
+    return X_source[idx_train], X_source[idx_hold]
+
+
+def build_upper_unlabeled_loaders(X_source_holdout, X_target_pool, w_target, bs=64):
+    ds_src = ArrayDataset(X_source_holdout)
+    ds_tgt = ArrayDataset(X_target_pool, None, w=w_target)
+    src_loader = DataLoader(ds_src, batch_size=min(bs, max(1, len(ds_src))), shuffle=True, drop_last=False)
+    tgt_loader = DataLoader(ds_tgt, batch_size=min(bs, max(1, len(ds_tgt))), shuffle=True, drop_last=False)
+    return src_loader, tgt_loader
 
 
 # ---------------- Candidate model ----------------
@@ -618,9 +655,8 @@ def run_final_only_option2(
     arch_name: str,
     arch_cfg,
     Xs, Ys, X_target_pool,
-    X_val_mixed, Y_val_mixed,
+    X_source_holdout,
     X_eval, Y_eval,
-    fixed_s_idx,
     args,
     device,
     in_ch,
@@ -631,8 +667,8 @@ def run_final_only_option2(
     """
     FINAL-ONLY for combined mode:
       warmup on source -> freeze -> SVDD on forward_features (fit on source normal)
-      -> weights on target_pool_unlabeled -> train_bilevel final
-      -> eval on X_eval/Y_eval (test if provided else val)
+      -> weights on target_pool_unlabeled -> unlabeled bilevel final
+      -> fit SVDD on adapted source features -> eval on X_eval/Y_eval (test if provided else val)
     """
     svdd_epochs = 10
     svdd_warmup_epochs = 2
@@ -644,12 +680,6 @@ def run_final_only_option2(
     initialize_candidate_from_tstcc(model, tstcc_backbone)
 
     ds_source = ArrayDataset(Xs, Ys)
-    ds_target_val = ArrayDataset(X_val_mixed, Y_val_mixed)
-
-    val_loader, _, _, _, _ = build_validation(
-        ds_source, ds_target_val,
-        bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
-    )
 
     warmup_candidate_on_source(model, ds_source, device=device, steps=80, bs=args.batch_size, lr=1e-3)
 
@@ -678,10 +708,13 @@ def run_final_only_option2(
     model.train()
 
     ds_target = ArrayDataset(X_target_pool, None, w=w_ent)
+    upper_src_loader, upper_tgt_loader = build_upper_unlabeled_loaders(
+        X_source_holdout, X_target_pool, w_ent, bs=args.batch_size
+    )
     alpha_final = 0.3 + 0.2 * (N_ITERS - 1)
 
     train_log = train_bilevel(
-        model, ds_source, ds_target, val_loader,
+        model, ds_source, ds_target, None,
         device=device,
         steps=200,
         bs=args.batch_size,
@@ -692,33 +725,25 @@ def run_final_only_option2(
         use_cosine_decay=True,
         early_stop=True,
         patience=10,
-        ckpt_path=os.path.join(out_dir, "checkpoints", f"{arch_name}_final_best.pt")
+        ckpt_path=os.path.join(out_dir, "checkpoints", f"{arch_name}_final_best.pt"),
+        upper_source_loader=upper_src_loader,
+        upper_target_loader=upper_tgt_loader,
+        upper_beta_gap=args.combined_upper_gap,
     )
 
     metrics_uad = None
     if X_eval is not None and Y_eval is not None:
-        model.eval()
-        all_probs = []
-        dl_eval = DataLoader(ArrayDataset(X_eval), batch_size=256, shuffle=False)
-        with torch.no_grad():
-            for xb in dl_eval:
-                xb = xb.to(device)
-                logits, _ = model(xb)
-                all_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
-        probs = np.concatenate(all_probs, axis=0)
-
-        scores = probs[:, 1]
+        scores, train_scores = fit_final_svdd_and_score(
+            model,
+            X_train_norm=Xs,
+            X_eval=X_eval,
+            device=device,
+            svdd_epochs=20,
+            svdd_warmup_epochs=5,
+            svdd_nu=0.05,
+            max_fit=5000,
+        )
         ap, auroc = compute_ap_auroc(Y_eval, scores)
-
-        # POT threshold learned from source normal (Xs) via model's anomaly prob on Xs
-        train_probs = []
-        dl_train_norm = DataLoader(ArrayDataset(Xs), batch_size=256, shuffle=False)
-        with torch.no_grad():
-            for xb in dl_train_norm:
-                xb = xb.to(device)
-                logits, _ = model(xb)
-                train_probs.append(torch.softmax(logits, dim=1).cpu().numpy())
-        train_scores = np.concatenate(train_probs, axis=0)[:, 1]
 
         thr_pot = pot_threshold(train_scores, q=1e-3, level=0.99)
         p_pot, r_pot, f1_pot = f1_at_threshold(Y_eval, scores, thr_pot)
@@ -906,6 +931,32 @@ def resolve_omni_reference_settings(machine: str, args):
     }
 
 
+def _generic_uad_metrics_from_scores(y_eval, scores_eval, scores_train, *, pot_q=1e-3, pot_level=0.99):
+    ap, auroc = compute_ap_auroc(y_eval, scores_eval)
+    thr_pot = pot_threshold(scores_train, q=pot_q, level=pot_level)
+    p_pot, r_pot, f1_pot = f1_at_threshold(y_eval, scores_eval, thr_pot)
+    f1_b, p_b, r_b, thr_b = best_f1(y_eval, scores_eval)
+    y_pred_bin = (np.asarray(scores_eval) >= float(thr_pot)).astype(int)
+    ev = event_f1_and_delay(y_eval, y_pred_bin)
+    return {
+        "ap": float(ap),
+        "auroc": float(auroc),
+        "f1_pot": float(f1_pot),
+        "precision_pot": float(p_pot),
+        "recall_pot": float(r_pot),
+        "thr_pot": float(thr_pot),
+        "f1_best": float(f1_b),
+        "precision_best": float(p_b),
+        "recall_best": float(r_b),
+        "thr_best": float(thr_b),
+        "event_f1": float(ev["event_f1"]),
+        "event_precision": float(ev["event_precision"]),
+        "event_recall": float(ev["event_recall"]),
+        "delay_mean": float(ev["delay_mean"]),
+        "delay_median": float(ev["delay_median"]),
+    }
+
+
 def _omni_metrics_from_scores(y_eval, scores_eval, scores_train, *, pot_q=1e-3, pot_level=0.98):
     ap, auroc = compute_ap_auroc(y_eval, scores_eval)
     normal_scores_eval = -np.asarray(scores_eval).astype(float)
@@ -1038,6 +1089,602 @@ def _evaluate_omni_arch_on_raw_source(
             pot_q=pot_q,
             pot_level=pot_level,
         ),
+    }
+
+
+def _evaluate_usad_arch_on_raw_source(
+    arch,
+    *,
+    train_windows_inner,
+    val_windows_inner,
+    train_windows_full,
+    test_windows,
+    y_test_window_labels,
+    device,
+    args,
+    pot_q,
+    pot_level,
+):
+    w_size = int(train_windows_full.shape[1])
+
+    model = UsadModel(w_size, arch).to(device)
+    search_log = train_usad_source(
+        model,
+        train_windows_inner,
+        val_windows_inner,
+        device=device,
+        arch=arch,
+        epochs=args.usad_epochs,
+        patience=args.usad_patience,
+        shuffle=False,
+        use_early_stopping=False,
+        restore_best_state=False,
+    )
+    val_stats = validate_usad_on_windows(
+        model,
+        val_windows_inner,
+        device=device,
+        batch_size=arch.batch_size,
+        epoch_idx=args.usad_epochs,
+    )
+
+    final_model = UsadModel(w_size, arch).to(device)
+    final_model.load_state_dict({k: v.detach().cpu().clone() for k, v in model.state_dict().items()})
+    final_log = train_usad_source(
+        final_model,
+        train_windows_full,
+        val_windows_inner,
+        device=device,
+        arch=arch,
+        epochs=args.usad_final_epochs,
+        patience=max(1, args.usad_final_patience if args.usad_final_patience > 0 else args.usad_patience),
+        shuffle=False,
+        use_early_stopping=bool(args.usad_final_early_stopping),
+        restore_best_state=bool(args.usad_final_early_stopping),
+    )
+
+    scores_train = score_usad_windows(
+        final_model,
+        train_windows_full,
+        device=device,
+        batch_size=arch.batch_size,
+    )
+    scores_test = score_usad_windows(
+        final_model,
+        test_windows,
+        device=device,
+        batch_size=arch.batch_size,
+    )
+
+    return {
+        "arch": arch,
+        "val_stats": val_stats,
+        "search_log": search_log,
+        "final_log": final_log,
+        "scores_train": scores_train,
+        "scores_test": scores_test,
+        "metrics_uad": _generic_uad_metrics_from_scores(
+            y_test_window_labels,
+            scores_test,
+            scores_train,
+            pot_q=pot_q,
+            pot_level=pot_level,
+        ),
+    }
+
+
+def _evaluate_tranad_arch_on_raw_source(
+    arch,
+    *,
+    in_ch,
+    train_windows_inner,
+    val_windows_inner,
+    train_windows_full,
+    test_windows,
+    y_test_labels,
+    device,
+    args,
+    pot_q,
+    pot_level,
+):
+    model = TranADModel(in_ch, arch).to(device).double()
+    search_log = train_tranad_source(
+        model,
+        train_windows_inner,
+        val_windows_inner,
+        device=device,
+        arch=arch,
+        epochs=args.tranad_epochs,
+        patience=args.tranad_patience,
+        shuffle=False,
+        use_early_stopping=False,
+        restore_best_state=False,
+    )
+    val_stats = validate_tranad_on_windows(
+        model,
+        val_windows_inner,
+        device=device,
+        batch_size=arch.batch_size,
+        epoch_idx=args.tranad_epochs,
+    )
+
+    final_model = TranADModel(in_ch, arch).to(device).double()
+    final_model.load_state_dict({k: v.detach().cpu().clone() for k, v in model.state_dict().items()})
+    final_log = train_tranad_source(
+        final_model,
+        train_windows_full,
+        None,
+        device=device,
+        arch=arch,
+        epochs=args.tranad_final_epochs,
+        patience=max(1, args.tranad_patience),
+        shuffle=False,
+        use_early_stopping=False,
+        restore_best_state=False,
+    )
+
+    scores_train = score_tranad_windows(
+        final_model,
+        train_windows_full,
+        device=device,
+        batch_size=arch.batch_size,
+    )
+    scores_test = score_tranad_windows(
+        final_model,
+        test_windows,
+        device=device,
+        batch_size=arch.batch_size,
+    )
+
+    return {
+        "arch": arch,
+        "val_stats": val_stats,
+        "search_log": search_log,
+        "final_log": final_log,
+        "scores_train": scores_train,
+        "scores_test": scores_test,
+        "metrics_uad": _generic_uad_metrics_from_scores(
+            y_test_labels,
+            scores_test,
+            scores_train,
+            pot_q=pot_q,
+            pot_level=pot_level,
+        ),
+    }
+
+
+def run_tranad_uad_source_family_raw(*, raw_smd_root, machine, device, args):
+    x_train, x_test, y_test = load_raw_tranad_smd_machine(raw_smd_root, machine)
+
+    train_start = max(0, int(getattr(args, "tranad_train_start", 0)))
+    test_start = max(0, int(getattr(args, "tranad_test_start", 0)))
+    if args.tranad_train_limit and args.tranad_train_limit > 0:
+        x_train = x_train[train_start:train_start + args.tranad_train_limit]
+    elif train_start > 0:
+        x_train = x_train[train_start:]
+    if args.tranad_test_limit and args.tranad_test_limit > 0:
+        x_test = x_test[test_start:test_start + args.tranad_test_limit]
+        y_test = y_test[test_start:test_start + args.tranad_test_limit]
+    elif test_start > 0:
+        x_test = x_test[test_start:]
+        y_test = y_test[test_start:]
+
+    in_ch = x_train.shape[-1]
+    fixed_arch = get_fixed_paper_tranad_arch(window_length=args.tranad_window_length)
+    fixed_arch = replace(
+        fixed_arch,
+        ff_dim=args.tranad_ff_dim if args.tranad_ff_dim > 0 else fixed_arch.ff_dim,
+        dropout=args.tranad_dropout,
+        encoder_layers=args.tranad_encoder_layers if args.tranad_encoder_layers > 0 else fixed_arch.encoder_layers,
+        decoder_layers=args.tranad_decoder_layers if args.tranad_decoder_layers > 0 else fixed_arch.decoder_layers,
+        batch_size=args.tranad_batch_size,
+        max_epoch=args.tranad_epochs,
+        valid_ratio=args.tranad_valid_ratio,
+        lr=args.tranad_lr,
+    )
+
+    train_windows_full = build_tranad_windows(x_train, fixed_arch.window_length)
+    x_train_inner, x_val_inner = contiguous_train_valid_split(
+        train_windows_full,
+        valid_ratio=fixed_arch.valid_ratio,
+    )
+    test_windows = build_tranad_windows(x_test, fixed_arch.window_length)
+
+    print("[TRANAD RAW INPUT]")
+    print("  machine     :", machine)
+    print("  train raw   :", x_train.shape)
+    print("  test raw    :", x_test.shape)
+    print("  labels test :", y_test.shape, "positives:", int(np.sum(y_test)))
+    print("  train win   :", x_train_inner.shape, "| val win:", x_val_inner.shape)
+    print("  test win    :", test_windows.shape)
+    print("  window      :", fixed_arch.window_length)
+    print("  ff/dropout  :", fixed_arch.ff_dim, fixed_arch.dropout)
+    print("  enc/dec     :", fixed_arch.encoder_layers, fixed_arch.decoder_layers)
+    print("  POT q/level :", args.tranad_pot_q, args.tranad_pot_level)
+
+    print("\n[FIXED BASELINE] TranAD upstream-faithful fixed architecture...")
+    fixed_eval = _evaluate_tranad_arch_on_raw_source(
+        fixed_arch,
+        in_ch=in_ch,
+        train_windows_inner=x_train_inner,
+        val_windows_inner=x_val_inner,
+        train_windows_full=train_windows_full,
+        test_windows=test_windows,
+        y_test_labels=y_test,
+        device=device,
+        args=args,
+        pot_q=args.tranad_pot_q,
+        pot_level=args.tranad_pot_level,
+    )
+
+    if getattr(args, "tranad_fixed_only", False):
+        return {
+            "mode": "uad_source",
+            "family": "tranad",
+            "protocol": "raw_smd_machine_by_machine",
+            "machine": machine,
+            "raw_smd_root": str(raw_smd_root),
+            "best_arch": str(fixed_arch),
+            "search_history": [],
+            "tranad_family_notes": {
+                "target": "upstream_style_source_only",
+                "dataset": "SMD",
+                "scoring": "phase2_last_step_forecasting_mse",
+                "training": "epoch_weighted_phase1_phase2_reconstruction_loss",
+                "preprocess_mode": "none",
+                "frozen_core_components": [
+                    "raw_smd_no_normalization",
+                    "front_padded_window_protocol",
+                    "one_transformer_encoder",
+                    "two_transformer_decoders",
+                    "self_conditioning_phase2",
+                    "custom_repo_transformer_blocks_without_layernorm",
+                    "paper_style_epoch_weighted_phase_loss",
+                    "last_step_forecasting_mse_score",
+                ],
+                "searched_components": [
+                    "ff_dim",
+                    "dropout",
+                    "encoder_layers",
+                    "decoder_layers",
+                ],
+                "fixed_only": True,
+            },
+            "fixed_baseline": {
+                "arch": str(fixed_arch),
+                "metrics_uad": fixed_eval["metrics_uad"],
+                "val_stats": fixed_eval["val_stats"],
+                "search_train_curve": fixed_eval["search_log"],
+                "final_train_curve": fixed_eval["final_log"],
+            },
+            "searched_partial_nas": None,
+            "metrics_uad": fixed_eval["metrics_uad"],
+        }
+
+    n_iters = max(1, int(args.tranad_search_iters))
+    history = []
+    best_obj = float("inf")
+    best_arch = None
+    best_eval = None
+
+    for iter_id in range(n_iters):
+        print(f"\n[ITER {iter_id + 1}/{n_iters}] TranAD partial NAS on raw SMD...")
+        for i in range(args.search_candidates):
+            arch_c = sample_tranad_arch(window_length=args.tranad_window_length)
+            arch_c = replace(
+                arch_c,
+                batch_size=args.tranad_batch_size,
+                max_epoch=args.tranad_epochs,
+                valid_ratio=args.tranad_valid_ratio,
+                lr=args.tranad_lr,
+            )
+            eval_out = _evaluate_tranad_arch_on_raw_source(
+                arch_c,
+                in_ch=in_ch,
+                train_windows_inner=x_train_inner,
+                val_windows_inner=x_val_inner,
+                train_windows_full=train_windows_full,
+                test_windows=test_windows,
+                y_test_labels=y_test,
+                device=device,
+                args=args,
+                pot_q=args.tranad_pot_q,
+                pot_level=args.tranad_pot_level,
+            )
+            obj = float(eval_out["val_stats"]["val_score"])
+            history.append(
+                {
+                    "iter": iter_id + 1,
+                    "arch": str(arch_c),
+                    "objective": obj,
+                    "val_phase1_mse": float(eval_out["val_stats"]["val_phase1_mse"]),
+                    "val_phase2_mse": float(eval_out["val_stats"]["val_phase2_mse"]),
+                    "val_loss": float(eval_out["val_stats"]["val_loss"]),
+                    "val_score": float(eval_out["val_stats"]["val_score"]),
+                }
+            )
+            print(f"  Candidate {i + 1}/{args.search_candidates}: obj(val_score)={obj:.6f}")
+
+            if obj < best_obj:
+                best_obj = obj
+                best_arch = arch_c
+                best_eval = eval_out
+
+    if best_arch is None or best_eval is None:
+        raise RuntimeError("tranad/uad_source/raw: best_arch is None after search.")
+
+    print(f"\n[TRANAD SEARCH DONE] Best partial-NAS arch = {best_arch} | best_obj={best_obj:.6f}")
+
+    return {
+        "mode": "uad_source",
+        "family": "tranad",
+        "protocol": "raw_smd_machine_by_machine",
+        "machine": machine,
+        "raw_smd_root": str(raw_smd_root),
+        "best_arch": str(best_arch),
+        "search_history": history,
+        "tranad_family_notes": {
+            "target": "upstream_style_source_only",
+            "dataset": "SMD",
+            "scoring": "phase2_last_step_forecasting_mse",
+            "training": "epoch_weighted_phase1_phase2_reconstruction_loss",
+            "preprocess_mode": "none",
+            "frozen_core_components": [
+                "raw_smd_no_normalization",
+                "front_padded_window_protocol",
+                "one_transformer_encoder",
+                "two_transformer_decoders",
+                "self_conditioning_phase2",
+                "custom_repo_transformer_blocks_without_layernorm",
+                "paper_style_epoch_weighted_phase_loss",
+                "last_step_forecasting_mse_score",
+            ],
+            "searched_components": [
+                "ff_dim",
+                "dropout",
+                "encoder_layers",
+                "decoder_layers",
+            ],
+        },
+        "fixed_baseline": {
+            "arch": str(fixed_arch),
+            "metrics_uad": fixed_eval["metrics_uad"],
+            "val_stats": fixed_eval["val_stats"],
+            "search_train_curve": fixed_eval["search_log"],
+            "final_train_curve": fixed_eval["final_log"],
+        },
+        "searched_partial_nas": {
+            "arch": str(best_arch),
+            "metrics_uad": best_eval["metrics_uad"],
+            "val_stats": best_eval["val_stats"],
+            "search_train_curve": best_eval["search_log"],
+            "final_train_curve": best_eval["final_log"],
+        },
+        "metrics_uad": best_eval["metrics_uad"],
+    }
+
+
+def run_usad_uad_source_family_raw(*, swat_train_csv, swat_test_csv, device, args):
+    swat_data = RawSWaTDataset.from_csvs(
+        swat_train_csv,
+        swat_test_csv,
+        preprocess_mode=args.usad_preprocess,
+        downsample=args.usad_downsample,
+    )
+    if args.usad_train_limit and args.usad_train_limit > 0:
+        swat_data.x_train = swat_data.x_train[:args.usad_train_limit]
+    if args.usad_test_limit and args.usad_test_limit > 0:
+        swat_data.x_test = swat_data.x_test[:args.usad_test_limit]
+        swat_data.y_test = swat_data.y_test[:args.usad_test_limit]
+
+    fixed_arch = get_fixed_paper_usad_arch(
+        window_length=args.usad_window_length,
+        downsample=args.usad_downsample,
+    )
+    fixed_arch = replace(
+        fixed_arch,
+        latent_size=args.usad_latent_size if args.usad_latent_size > 0 else fixed_arch.latent_size,
+        batch_size=args.usad_batch_size,
+        max_epoch=args.usad_epochs,
+        valid_ratio=args.usad_valid_ratio,
+        lr=args.usad_lr,
+        stride=args.usad_stride,
+        score_alpha=args.usad_score_alpha,
+        score_beta=args.usad_score_beta,
+    )
+
+    train_windows_full = build_upstream_usad_flat_windows(
+        swat_data.x_train,
+        fixed_arch.window_length,
+        fixed_arch.stride,
+    )
+    x_train_inner, x_val_inner = contiguous_train_valid_split(
+        train_windows_full,
+        valid_ratio=fixed_arch.valid_ratio,
+    )
+    test_windows = build_upstream_usad_flat_windows(
+        swat_data.x_test,
+        fixed_arch.window_length,
+        fixed_arch.stride,
+    )
+    y_test_aligned = build_upstream_usad_window_labels(
+        swat_data.y_test,
+        window_length=fixed_arch.window_length,
+        stride=fixed_arch.stride,
+    )
+
+    print("[USAD RAW INPUT]")
+    print("  train csv   :", swat_train_csv)
+    print("  test csv    :", swat_test_csv)
+    print("  train raw   :", swat_data.x_train.shape)
+    print("  test raw    :", swat_data.x_test.shape)
+    print("  train win   :", x_train_inner.shape, "| val win:", x_val_inner.shape)
+    print("  test win    :", test_windows.shape)
+    print("  labels test :", swat_data.y_test.shape, "window-any:", y_test_aligned.shape)
+    print("  window      :", fixed_arch.window_length, "stride:", fixed_arch.stride)
+    print("  downsample  :", fixed_arch.downsample)
+    print("  preprocess  :", args.usad_preprocess)
+    print("  score a/b   :", fixed_arch.score_alpha, fixed_arch.score_beta)
+    print("  POT q/level :", args.usad_pot_q, args.usad_pot_level)
+
+    print("\n[FIXED BASELINE] USAD paper-style fixed architecture...")
+    fixed_eval = _evaluate_usad_arch_on_raw_source(
+        fixed_arch,
+        train_windows_inner=x_train_inner,
+        val_windows_inner=x_val_inner,
+        train_windows_full=train_windows_full,
+        test_windows=test_windows,
+        y_test_window_labels=y_test_aligned,
+        device=device,
+        args=args,
+        pot_q=args.usad_pot_q,
+        pot_level=args.usad_pot_level,
+    )
+
+    if getattr(args, "usad_fixed_only", False):
+        return {
+            "mode": "uad_source",
+            "family": "usad",
+            "protocol": "raw_swat_normal_attack",
+            "swat_train_csv": str(swat_train_csv),
+            "swat_test_csv": str(swat_test_csv),
+            "best_arch": str(fixed_arch),
+            "search_history": [],
+            "usad_family_notes": {
+                "target": "paper_style_source_only",
+                "dataset": "SWaT",
+                "scoring": "alpha_mse(x,w1)+beta_mse(x,w3)",
+                "training": "two_optimizer_adversarial_autoencoder",
+                "preprocess_mode": args.usad_preprocess,
+                "downsample": args.usad_downsample,
+                "frozen_core_components": [
+                    "one_mlp_encoder",
+                    "two_mlp_decoders",
+                    "three_linear_layers_per_module",
+                    "relu_hidden_activation",
+                    "sigmoid_decoder_output",
+                    "paper_style_usad_loss1_loss2",
+                    "paper_style_usad_anomaly_score",
+                ],
+                "searched_components": [
+                    "latent_size",
+                    "hidden_scale",
+                ],
+                "fixed_only": True,
+            },
+            "fixed_baseline": {
+                "arch": str(fixed_arch),
+                "metrics_uad": fixed_eval["metrics_uad"],
+                "val_stats": fixed_eval["val_stats"],
+                "search_train_curve": fixed_eval["search_log"],
+                "final_train_curve": fixed_eval["final_log"],
+            },
+            "searched_partial_nas": None,
+            "metrics_uad": fixed_eval["metrics_uad"],
+        }
+
+    N_ITERS = max(1, int(args.usad_search_iters))
+    history = []
+    best_obj = float("inf")
+    best_arch = None
+    best_eval = None
+
+    for iter_id in range(N_ITERS):
+        print(f"\n[ITER {iter_id+1}/{N_ITERS}] USAD UAD_SOURCE partial NAS on raw SWaT...")
+        for i in range(args.search_candidates):
+            arch_c = sample_usad_arch(
+                window_length=args.usad_window_length,
+                downsample=args.usad_downsample,
+            )
+            arch_c = replace(
+                arch_c,
+                batch_size=args.usad_batch_size,
+                max_epoch=args.usad_epochs,
+                valid_ratio=args.usad_valid_ratio,
+                lr=args.usad_lr,
+                stride=args.usad_stride,
+                score_alpha=args.usad_score_alpha,
+                score_beta=args.usad_score_beta,
+            )
+            eval_out = _evaluate_usad_arch_on_raw_source(
+                arch_c,
+                train_windows_inner=x_train_inner,
+                val_windows_inner=x_val_inner,
+                train_windows_full=train_windows_full,
+                test_windows=test_windows,
+                y_test_window_labels=y_test_aligned,
+                device=device,
+                args=args,
+                pot_q=args.usad_pot_q,
+                pot_level=args.usad_pot_level,
+            )
+            obj = float(eval_out["val_stats"]["val_score"])
+            history.append(
+                {
+                    "iter": iter_id + 1,
+                    "arch": str(arch_c),
+                    "objective": obj,
+                    "val_loss1": float(eval_out["val_stats"]["val_loss1"]),
+                    "val_loss2": float(eval_out["val_stats"]["val_loss2"]),
+                    "val_score": float(eval_out["val_stats"]["val_score"]),
+                }
+            )
+            print(f"  Candidate {i+1}/{args.search_candidates}: obj(val_score)={obj:.6f}")
+
+            if obj < best_obj:
+                best_obj = obj
+                best_arch = arch_c
+                best_eval = eval_out
+
+    if best_arch is None or best_eval is None:
+        raise RuntimeError("usad/uad_source/raw: best_arch is None after search.")
+
+    print(f"\n[USAD SEARCH DONE] Best partial-NAS arch = {best_arch} | best_obj={best_obj:.6f}")
+
+    return {
+        "mode": "uad_source",
+        "family": "usad",
+        "protocol": "raw_swat_normal_attack",
+        "swat_train_csv": str(swat_train_csv),
+        "swat_test_csv": str(swat_test_csv),
+        "best_arch": str(best_arch),
+        "search_history": history,
+        "usad_family_notes": {
+            "target": "paper_style_source_only",
+            "dataset": "SWaT",
+            "scoring": "alpha_mse(x,w1)+beta_mse(x,w3)",
+            "training": "two_optimizer_adversarial_autoencoder",
+            "preprocess_mode": args.usad_preprocess,
+            "downsample": args.usad_downsample,
+            "frozen_core_components": [
+                "one_mlp_encoder",
+                "two_mlp_decoders",
+                "three_linear_layers_per_module",
+                "relu_hidden_activation",
+                "sigmoid_decoder_output",
+                "paper_style_usad_loss1_loss2",
+                "paper_style_usad_anomaly_score",
+            ],
+            "searched_components": [
+                "latent_size",
+                "hidden_scale",
+            ],
+        },
+        "fixed_baseline": {
+            "arch": str(fixed_arch),
+            "metrics_uad": fixed_eval["metrics_uad"],
+            "val_stats": fixed_eval["val_stats"],
+            "search_train_curve": fixed_eval["search_log"],
+            "final_train_curve": fixed_eval["final_log"],
+        },
+        "searched_partial_nas": {
+            "arch": str(best_arch),
+            "metrics_uad": best_eval["metrics_uad"],
+            "val_stats": best_eval["val_stats"],
+            "search_train_curve": best_eval["search_log"],
+            "final_train_curve": best_eval["final_log"],
+        },
+        "metrics_uad": best_eval["metrics_uad"],
     }
 
 
@@ -1240,10 +1887,16 @@ def main():
                         help="Official raw SMD root with train/test/test_label folders. Used by family=omni_anomaly.")
     parser.add_argument("--machine", default=None,
                         help="Machine id like machine-1-1. Used by family=omni_anomaly.")
+    parser.add_argument("--swat_train_csv", default="data/SWaT/SWaT_Dataset_Normal_v1.csv",
+                        help="Raw SWaT normal CSV. Used by family=usad.")
+    parser.add_argument("--swat_test_csv", default="data/SWaT/SWaT_Dataset_Attack_v0.csv",
+                        help="Raw SWaT attack CSV. Used by family=usad.")
     parser.add_argument("--epochs_pretrain", type=int, default=10)
     parser.add_argument("--search_candidates", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--combined_upper_gap", type=float, default=1.0,
+                        help="Weight for source-target feature-gap term in unlabeled upper-level objective.")
     parser.add_argument(
         "--mode",
         type=str,
@@ -1258,10 +1911,12 @@ def main():
         "--family",
         type=str,
         default="default_nasade",
-        choices=["default_nasade", "omni_anomaly"],
+        choices=["default_nasade", "omni_anomaly", "usad", "tranad"],
         help=(
             "default_nasade: current CNN/Transformer-GRU-TCN + TS-TCC/SVDD pipeline.\n"
-            "omni_anomaly: paper-faithful OmniAnomaly family for raw SMD source-only runs."
+            "omni_anomaly: paper-faithful OmniAnomaly family for raw SMD source-only runs.\n"
+            "usad: paper-style USAD family for raw SWaT source-only runs.\n"
+            "tranad: upstream-faithful TranAD family for raw SMD source-only runs."
         ),
     )
     parser.add_argument("--omni_epochs", type=int, default=20)
@@ -1284,6 +1939,52 @@ def main():
                         help="Override POT q. If <= 0, infer from --omni_reference.")
     parser.add_argument("--omni_pot_level", type=float, default=0.0,
                         help="Override POT level/low-quantile. If <= 0, infer from machine group and --omni_reference.")
+    parser.add_argument("--usad_epochs", type=int, default=70)
+    parser.add_argument("--usad_final_epochs", type=int, default=70)
+    parser.add_argument("--usad_final_patience", type=int, default=0,
+                        help="Patience for USAD final-stage early stopping. If <= 0, reuse --usad_patience.")
+    parser.add_argument("--usad_lr", type=float, default=1e-3)
+    parser.add_argument("--usad_patience", type=int, default=5)
+    parser.add_argument("--usad_window_length", type=int, default=12)
+    parser.add_argument("--usad_valid_ratio", type=float, default=0.2)
+    parser.add_argument("--usad_batch_size", type=int, default=128)
+    parser.add_argument("--usad_stride", type=int, default=1)
+    parser.add_argument("--usad_downsample", type=int, default=5)
+    parser.add_argument("--usad_latent_size", type=int, default=0,
+                        help="Override paper-style z_size. If <= 0, use window_length * 100 like the upstream USAD SWaT notebook.")
+    parser.add_argument("--usad_search_iters", type=int, default=3)
+    parser.add_argument("--usad_train_limit", type=int, default=0)
+    parser.add_argument("--usad_test_limit", type=int, default=0)
+    parser.add_argument("--usad_score_alpha", type=float, default=0.5)
+    parser.add_argument("--usad_score_beta", type=float, default=0.5)
+    parser.add_argument("--usad_preprocess", type=str, default="train_minmax",
+                        choices=["train_minmax", "train_zscore"])
+    parser.add_argument("--usad_fixed_only", action="store_true")
+    parser.add_argument("--usad_final_early_stopping", action="store_true")
+    parser.add_argument("--usad_pot_q", type=float, default=1e-3)
+    parser.add_argument("--usad_pot_level", type=float, default=0.99)
+    parser.add_argument("--tranad_epochs", type=int, default=5)
+    parser.add_argument("--tranad_final_epochs", type=int, default=5)
+    parser.add_argument("--tranad_lr", type=float, default=1e-4)
+    parser.add_argument("--tranad_patience", type=int, default=5)
+    parser.add_argument("--tranad_window_length", type=int, default=10)
+    parser.add_argument("--tranad_valid_ratio", type=float, default=0.2)
+    parser.add_argument("--tranad_batch_size", type=int, default=128)
+    parser.add_argument("--tranad_ff_dim", type=int, default=0,
+                        help="Override fixed TranAD feedforward dim. If <= 0, use upstream default.")
+    parser.add_argument("--tranad_dropout", type=float, default=0.1)
+    parser.add_argument("--tranad_encoder_layers", type=int, default=0,
+                        help="Override fixed TranAD encoder layer count. If <= 0, use upstream default.")
+    parser.add_argument("--tranad_decoder_layers", type=int, default=0,
+                        help="Override fixed TranAD decoder layer count. If <= 0, use upstream default.")
+    parser.add_argument("--tranad_search_iters", type=int, default=2)
+    parser.add_argument("--tranad_train_start", type=int, default=0)
+    parser.add_argument("--tranad_train_limit", type=int, default=0)
+    parser.add_argument("--tranad_test_start", type=int, default=0)
+    parser.add_argument("--tranad_test_limit", type=int, default=0)
+    parser.add_argument("--tranad_fixed_only", action="store_true")
+    parser.add_argument("--tranad_pot_q", type=float, default=1e-3)
+    parser.add_argument("--tranad_pot_level", type=float, default=0.99)
     args = parser.parse_args()
 
     set_global_seed(42)
@@ -1301,6 +2002,42 @@ def main():
 
         print("[INFO] Family = omni_anomaly (paper-faithful source-only path).")
         res = run_omni_uad_source_family_raw(
+            raw_smd_root=args.raw_smd_root,
+            machine=args.machine,
+            device=device,
+            args=args,
+        )
+        os.makedirs("outputs", exist_ok=True)
+        with open("outputs/results.json", "w", encoding="utf-8") as f:
+            json.dump(res, f, indent=2, ensure_ascii=False)
+        print("\n[OK] Saved outputs/results.json")
+        return
+
+    if args.family == "usad":
+        if args.mode != "uad_source":
+            raise NotImplementedError("family=usad is currently implemented only for mode=uad_source.")
+
+        print("[INFO] Family = usad (paper-style source-only path on raw SWaT).")
+        res = run_usad_uad_source_family_raw(
+            swat_train_csv=args.swat_train_csv,
+            swat_test_csv=args.swat_test_csv,
+            device=device,
+            args=args,
+        )
+        os.makedirs("outputs", exist_ok=True)
+        with open("outputs/results.json", "w", encoding="utf-8") as f:
+            json.dump(res, f, indent=2, ensure_ascii=False)
+        print("\n[OK] Saved outputs/results.json")
+        return
+
+    if args.family == "tranad":
+        if args.mode != "uad_source":
+            raise NotImplementedError("family=tranad is currently implemented only for mode=uad_source.")
+        if not args.machine:
+            raise ValueError("family=tranad requires --machine, e.g. --machine machine-1-1")
+
+        print("[INFO] Family = tranad (upstream-faithful source-only path on raw SMD).")
+        res = run_tranad_uad_source_family_raw(
             raw_smd_root=args.raw_smd_root,
             machine=args.machine,
             device=device,
@@ -1337,37 +2074,21 @@ def main():
         if len(parts) == 3:
             X_test, y_test = load_Xy(parts[2])
     else:
-        if len(parts) < 3:
+        if len(parts) != 4:
             raise ValueError(
                 "adaptnas_combined expects: "
-                "train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz[,test_mixed.npz]. "
-                "Legacy fallback is: train_normal.npz,val_mixed.npz,test_mixed.npz"
+                "train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz,test_mixed.npz. "
+                "This mode now requires a separate target_pool_unlabeled split to avoid label leakage."
             )
 
         X_train_norm, y_train_norm = load_Xy(parts[0])
-
-        if len(parts) >= 4:
-            X_target_pool, _ = load_Xy(parts[1])
-            X_val, y_val = load_Xy(parts[2])
-            X_test, y_test = load_Xy(parts[3])
-            combined_has_separate_pool = True
-        else:
-            second_has_y = npz_has_y(parts[1])
-            if second_has_y:
-                print(
-                    "[WARN] adaptnas_combined called without a separate target_pool_unlabeled; "
-                    "falling back to val_mixed as both target pool and validation target."
-                )
-                X_val, y_val = load_Xy(parts[1])
-                X_test, y_test = load_Xy(parts[2])
-                X_target_pool = X_val
-            else:
-                X_target_pool, _ = load_Xy(parts[1])
-                X_val, y_val = load_Xy(parts[2])
-                combined_has_separate_pool = True
+        X_target_pool, _ = load_Xy(parts[1])
+        X_val, y_val = load_Xy(parts[2])
+        X_test, y_test = load_Xy(parts[3])
+        combined_has_separate_pool = True
 
     if y_val is None:
-        raise ValueError("val_mixed.npz must contain y for AUROC/AP/event-F1 evaluation/selection.")
+        raise ValueError("val_mixed.npz must contain y for evaluation.")
 
     val_has_both_classes = np.unique(y_val).size >= 2
     test_has_both_classes = (y_test is not None) and (np.unique(y_test).size >= 2)
@@ -1382,13 +2103,9 @@ def main():
 
     if args.mode == "adaptnas_combined" and not val_has_both_classes:
         print(
-            "[WARN] val_mixed contains only one class, so target AUROC is undefined during "
-            "architecture selection. Falling back to val_acc tie-breaking/selection. "
-            "For more meaningful combined search, regenerate splits so val_mixed contains "
-            "both normal and anomaly windows."
+            "[WARN] val_mixed contains only one class. Search no longer uses target labels, "
+            "but validation metrics on val_mixed may be less informative."
         )
-        if test_has_both_classes:
-            print("[WARN] test_mixed does contain both classes, so final reported metrics can still be computed.")
 
     print("[INFO] Normalizing window size to 128...")
     X_train_norm = fix_length(X_train_norm, window=128)
@@ -1492,7 +2209,6 @@ def main():
     # -------- Stage 2-4: Search --------
     N_ITERS = 3
     history = []
-    fixed_s_idx = None
     best_arch = None
 
     if args.mode == "uad_source":
@@ -1556,19 +2272,15 @@ def main():
 
     else:
         # ================= ADAPTNAS-COMBINED (source-normal + separate target pool when available) =================
-        Xs = X_train_norm
+        Xs_train, Xs_holdout = split_source_holdout_normal(X_train_norm, holdout_ratio=0.2, seed=42)
+        Xs = Xs_train
         Ys = Ys_source
-        Xt_train = X_target_pool if X_target_pool is not None else X_val
-        Xv = X_val
-        Yv = y_val
+        Xt_train = X_target_pool
 
-        best_overall_auroc = -1.0
-        best_overall_val_acc = -1.0
-        best_overall_rank_auroc = float("-inf")
+        best_overall_upper_obj = float("inf")
         best_overall_arch = None
         best_overall_iter = None
         best_overall_cand_state = None
-        fixed_s_idx = None
 
         svdd_epochs = 10
         svdd_warmup_epochs = 2
@@ -1581,20 +2293,7 @@ def main():
             print(f"\n[ITER {iter_id+1}/{N_ITERS}] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...")
 
             ds_source = ArrayDataset(Xs, Ys)
-            ds_target_val = ArrayDataset(Xv, Yv)
-
-            if iter_id == 0:
-                val_loader, fixed_s_idx, val_src, val_tgt, _ = build_validation(
-                    ds_source, ds_target_val, bs=args.batch_size, seed=42, fixed_s_idx=None
-                )
-            else:
-                val_loader, _, val_src, val_tgt, _ = build_validation(
-                    ds_source, ds_target_val, bs=args.batch_size, seed=42, fixed_s_idx=fixed_s_idx
-                )
-
-            best_iter_auroc = float("nan")
-            best_iter_val_acc = -1.0
-            best_iter_rank_auroc = float("-inf")
+            best_iter_upper_obj = float("inf")
             best_arch_iter = None
             best_cand_iter = None
 
@@ -1637,9 +2336,12 @@ def main():
                 cand.train()
 
                 ds_target = ArrayDataset(Xt_train, None, w=w_ent)
+                upper_src_loader, upper_tgt_loader = build_upper_unlabeled_loaders(
+                    Xs_holdout, Xt_train, w_ent, bs=args.batch_size
+                )
 
                 train_bilevel(
-                    cand, ds_source, ds_target, val_loader,
+                    cand, ds_source, ds_target, None,
                     device=device,
                     steps=80,
                     bs=args.batch_size,
@@ -1648,61 +2350,53 @@ def main():
                     lr_inner=1e-3,
                     lr_arch=1e-3,
                     use_cosine_decay=True,
-                    early_stop=False
+                    early_stop=False,
+                    upper_source_loader=upper_src_loader,
+                    upper_target_loader=upper_tgt_loader,
+                    upper_beta_gap=args.combined_upper_gap,
                 )
 
-                # upper step (uses labels on val_tgt internally)
                 from src.adaptnas.optimizer import AdaptNASOptimizer
                 opt = AdaptNASOptimizer(
                     cand, alpha=0.5, gamma=1.0,
                     lr_inner=1e-2, lr_arch=3e-3,
                     device=device
                 )
-                stats = opt.step_upper_combined(val_src, val_tgt, alpha=alpha_iter)
-                val_acc = 1.0 - stats["hybrid_err"]
-
-                auroc_tgt = eval_auroc_on_loader_binary(cand, val_tgt, device)
+                stats = opt.evaluate_upper_unlabeled(
+                    upper_src_loader,
+                    upper_tgt_loader,
+                    alpha=alpha_iter,
+                    beta_gap=args.combined_upper_gap,
+                )
+                upper_obj = float(stats["upper_obj"])
 
                 history.append({
                     "iter": iter_id + 1,
                     "arch": str(arch_c),
-                    "auroc_tgt": float(auroc_tgt),
-                    "val_acc": float(val_acc),
-                    "src_err": float(stats["src_err"]),
-                    "tgt_err": float(stats["tgt_err"]),
-                    "hybrid_err": float(stats["hybrid_err"]),
+                    "upper_obj": float(upper_obj),
+                    "src_obj": float(stats["src_obj"]),
+                    "tgt_obj": float(stats["tgt_obj"]),
+                    "gap_obj": float(stats["gap_obj"]),
                     "alpha": float(alpha_iter),
                     "tau": float(tau),
                     "w_min": float(w_min),
                     "svdd_nu": float(svdd_nu),
                 })
 
-                print(f"  Candidate {i+1}/{args.search_candidates}: AUROC={auroc_tgt:.4f} | val_acc={val_acc:.4f}")
-
-                rank_auroc = float(auroc_tgt) if np.isfinite(auroc_tgt) else float("-inf")
-                better = (
-                    best_arch_iter is None
-                    or (rank_auroc > best_iter_rank_auroc)
-                    or (rank_auroc == best_iter_rank_auroc and val_acc > best_iter_val_acc)
+                print(
+                    f"  Candidate {i+1}/{args.search_candidates}: upper_obj={upper_obj:.6f} "
+                    f"(src={stats['src_obj']:.6f}, tgt={stats['tgt_obj']:.6f}, gap={stats['gap_obj']:.6f})"
                 )
-                if better:
-                    best_iter_auroc = float(auroc_tgt)
-                    best_iter_val_acc = float(val_acc)
-                    best_iter_rank_auroc = float(rank_auroc)
+
+                if best_arch_iter is None or upper_obj < best_iter_upper_obj:
+                    best_iter_upper_obj = float(upper_obj)
                     best_arch_iter = arch_c
                     best_cand_iter = cand
 
-            print(f"[ITER {iter_id+1}] ✅ Best iter arch = {best_arch_iter} | AUROC={best_iter_auroc:.4f} | val_acc={best_iter_val_acc:.4f}")
+            print(f"[ITER {iter_id+1}] ✅ Best iter arch = {best_arch_iter} | upper_obj={best_iter_upper_obj:.6f}")
 
-            better_overall = (
-                best_overall_arch is None
-                or (best_iter_rank_auroc > best_overall_rank_auroc)
-                or (best_iter_rank_auroc == best_overall_rank_auroc and best_iter_val_acc > best_overall_val_acc)
-            )
-            if better_overall:
-                best_overall_auroc = float(best_iter_auroc)
-                best_overall_val_acc = float(best_iter_val_acc)
-                best_overall_rank_auroc = float(best_iter_rank_auroc)
+            if best_overall_arch is None or best_iter_upper_obj < best_overall_upper_obj:
+                best_overall_upper_obj = float(best_iter_upper_obj)
                 best_overall_arch = best_arch_iter
                 best_overall_iter = iter_id + 1
                 best_overall_cand_state = {k: v.detach().cpu().clone() for k, v in best_cand_iter.state_dict().items()}
@@ -1714,7 +2408,7 @@ def main():
         best_cand = CandidateModel(in_ch, best_arch, num_classes=2).to(device)
         best_cand.load_state_dict(best_overall_cand_state)
 
-        print(f"\n[SEARCH DONE] ✅ Best OVERALL arch = {best_arch} (iter {best_overall_iter}) | best_AUROC={best_overall_auroc:.4f}")
+        print(f"\n[SEARCH DONE] ✅ Best OVERALL arch = {best_arch} (iter {best_overall_iter}) | best_upper_obj={best_overall_upper_obj:.6f}")
 
     # -------- Final stage --------
     print("[INFO] Final stage ...")
@@ -1726,6 +2420,11 @@ def main():
         "eval_split": eval_name,
         "has_separate_target_pool": bool(combined_has_separate_pool),
         "val_mixed_has_both_classes": bool(val_has_both_classes),
+        "search_objective": (
+            "source_normal_svdd_compactness"
+            if args.mode == "uad_source"
+            else "unlabeled_bilevel_upper_obj(source_holdout_compactness + weighted_target_entropy + weighted_feature_gap)"
+        ),
     }
 
     if args.mode == "uad_source":
@@ -1771,9 +2470,9 @@ def main():
 
     else:
         # combined final-only baselines (Base_* + NAS_BestArch)
-        Xs = X_train_norm
+        Xs, Xs_holdout = split_source_holdout_normal(X_train_norm, holdout_ratio=0.2, seed=42)
         Ys = Ys_source
-        Xt_train = X_target_pool if X_target_pool is not None else X_val
+        Xt_train = X_target_pool
 
         os.makedirs("outputs/baselines", exist_ok=True)
         os.makedirs("outputs/checkpoints", exist_ok=True)
@@ -1794,9 +2493,8 @@ def main():
                 arch_cfg=arch_cfg,
                 Xs=Xs, Ys=Ys,
                 X_target_pool=Xt_train,
-                X_val_mixed=X_val, Y_val_mixed=y_val,
+                X_source_holdout=Xs_holdout,
                 X_eval=X_eval, Y_eval=y_eval,
-                fixed_s_idx=fixed_s_idx,
                 args=args,
                 device=device,
                 in_ch=in_ch,
