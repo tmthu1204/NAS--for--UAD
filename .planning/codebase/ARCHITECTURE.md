@@ -6,206 +6,234 @@
 ## System Overview
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Entry Points / Experiment Wrappers                      │
-├──────────────────┬──────────────────┬──────────────────────────────────────┤
-│ `run.ps1`        │ `scripts/*.py`   │ `src/pipeline.py`                    │
-│ Windows launcher │ Batch/wrapper CLIs│ Main project orchestrator CLI       │
-└────────┬─────────┴────────┬─────────┴──────────────┬───────────────────────┘
-         │                  │                        │
-         ▼                  ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              Mode / Family Orchestration Layer                              │
-│ `src/pipeline.py` branches by `--mode` and `--family`                      │
-│ - `default_nasade` -> TS-TCC + CandidateModel + DeepSVDD + AdaptNAS        │
-│ - `omni_anomaly` -> raw SMD + Omni family                                  │
-│ - `usad` -> raw SWaT + USAD family                                         │
-│ - `tranad` -> raw SMD + TranAD family                                      │
-└────────┬──────────────────────────┬──────────────────────────┬──────────────┘
-         │                          │                          │
-         ▼                          ▼                          ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                Data / Training / Backbone Subsystems                        │
-│ `src/data/` `src/families/` `src/adaptnas/` `src/models/` `src/ts_tcc/`   │
-└─────────────────────────────────────┬───────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                 Raw Data, Experiment Bundles, and Outputs                   │
-│ `data/ServerMachineDataset/` `data/SWaT/` `data/smd*/` `outputs/`          │
-│ `results/`                                                                  │
-└─────────────────────────────────────────────────────────────────────────────┘
++-----------------------------+      +----------------------------------+
+| Data preparation CLIs       |----->| Protocol-ready datasets          |
+| `scripts/preprocess_smd.py` |      | `data/smd/`                      |
+| `scripts/make_uad_smd.py`   |      | `data/smd_experiments/`          |
+| `scripts/build_domain_...`  |      +----------------------------------+
++--------------+--------------+
+               |
+               v
++--------------+--------------+
+| Launchers and wrappers       |
+| `run.ps1`                    |
+| `scripts/run_all_smd.py`     |
+| `scripts/run_usad_swat.py`   |
+| `scripts/run_tranad_smd.py`  |
++--------------+--------------+
+               |
+               v
++--------------+-----------------------------------------------+
+| Main orchestrator                                              |
+| `src/pipeline.py`                                              |
+| - parses `--mode` and `--family`                               |
+| - loads either `.npz` protocol bundles or raw dataset paths    |
+| - dispatches into default or family-native training paths      |
++--------------+-----------------------------+------------------+
+               |                             |
+               v                             v
++--------------+--------------+   +----------+-------------------+
+| `default_nasade` stack      |   | Raw family stacks            |
+| `src/ts_tcc/`               |   | `src/families/omni_...py`   |
+| `src/models/`               |   | `src/families/usad.py`      |
+| `src/adaptnas/`             |   | `src/families/tranad.py`    |
+| `src/utils/metrics.py`      |   | `src/data/*.py`             |
++--------------+--------------+   +----------+-------------------+
+               \                             /
+                \                           /
+                 v                         v
+          +----------------------------------------+
+          | Shared artifact sinks                  |
+          | `outputs/` and `results/saved_models/` |
+          +----------------------------------------+
 ```
 
 ## Component Responsibilities
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| Pipeline orchestrator | Parses CLI flags, chooses protocol/family, runs search/training/evaluation, writes `outputs/results.json` | `src/pipeline.py` |
-| AdaptNAS search layer | Samples searchable default architectures and applies lower/upper bi-level updates | `src/adaptnas/search_space.py`, `src/adaptnas/trainer.py`, `src/adaptnas/optimizer.py` |
-| Family modules | Encapsulate paper-faithful or partial-NAS model families for `omni_anomaly`, `usad`, and `tranad` | `src/families/omni_anomaly.py`, `src/families/usad.py`, `src/families/tranad.py` |
-| Data adapters | Load raw SMD/SWaT inputs, normalize them, and build family-specific windows | `src/data/omni_smd.py`, `src/data/swat.py`, `src/data/tranad_smd.py`, `src/data/datasets.py` |
-| Model primitives | Provide reusable encoder, sequence, classifier, discriminator, and DeepSVDD blocks for `default_nasade` | `src/models/tscnn.py`, `src/models/transformer.py`, `src/models/classifier.py`, `src/models/discriminator.py`, `src/models/deepsvdd.py` |
-| TS-TCC subsystem | Supplies self-supervised pretraining backbone, augmentations, configs, and trainer reused by the default family | `src/ts_tcc/models/`, `src/ts_tcc/dataloader/`, `src/ts_tcc/trainer/trainer.py` |
-| Experiment runners | Convert datasets, build benchmark splits, and run many cases while capturing logs | `scripts/preprocess_smd.py`, `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`, `scripts/run_all_smd.py` |
+| Main orchestrator | Own CLI parsing, mode/family dispatch, default-family search loops, metric packaging, and final JSON writes. | `src/pipeline.py` |
+| Default-family NAS layer | Sample `ArchConfig` values and optimize lower/upper bilevel objectives for `default_nasade`. | `src/adaptnas/search_space.py`, `src/adaptnas/trainer.py`, `src/adaptnas/optimizer.py` |
+| Default-family model primitives | Provide the CNN encoder, sequence encoder, classifier, discriminator, and DeepSVDD blocks used by `CandidateModel`. | `src/models/tscnn.py`, `src/models/transformer.py`, `src/models/classifier.py`, `src/models/discriminator.py`, `src/models/deepsvdd.py` |
+| Family-native implementations | Keep paper-specific forward passes, training loops, validation objectives, and scoring rules separate from the default family. | `src/families/omni_anomaly.py`, `src/families/usad.py`, `src/families/tranad.py`, `src/families/omni_eval.py` |
+| Data adapters | Read raw SMD or SWaT files, normalize them, and build the tensor/window protocol each family expects. | `src/data/datasets.py`, `src/data/omni_smd.py`, `src/data/swat.py`, `src/data/tranad_smd.py` |
+| TS-TCC subsystem | Provide self-supervised pretraining used only by the default family before search/final training. | `src/ts_tcc/models/model.py`, `src/ts_tcc/models/TC.py`, `src/ts_tcc/dataloader/dataloader.py`, `src/ts_tcc/trainer/trainer.py` |
+| Dataset-build scripts | Convert raw datasets into `source.npz`/`target.npz`, then into search/eval experiment bundles with metadata. | `scripts/preprocess_smd.py`, `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py` |
+| Batch wrappers | Fan out repeated runs, capture logs, and copy `outputs/results.json` into case-scoped benchmark files. | `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py` |
 
 ## Pattern Overview
 
-**Overall:** Monolithic research orchestrator with pluggable family modules
+**Overall:** Single-orchestrator research pipeline with family-specific execution modules and file-based artifacts
 
 **Key Characteristics:**
-- `src/pipeline.py` is the single active orchestration hub for project-native runs and contains both CLI parsing and default-family model wiring.
-- Family branching is explicit: `default_nasade` uses `src/adaptnas/`, `src/models/`, and `src/ts_tcc/`, while `omni_anomaly`, `usad`, and `tranad` each route into dedicated `src/families/*.py` implementations.
-- `scripts/` is split between thin wrappers that shell into `python -m src.pipeline` and standalone reproduction scripts that call family modules directly.
+- `src/pipeline.py` is the only active orchestrator for project-native runs; almost every runtime branch starts there.
+- `default_nasade` composes TS-TCC pretraining, inline `CandidateModel` construction, DeepSVDD scoring, and AdaptNAS bilevel search in one flow.
+- `omni_anomaly`, `usad`, and `tranad` bypass the default stack and keep their own model/training/scoring rules in `src/families/`.
+- Data preparation is a separate pre-run layer in `scripts/`, not part of `src/pipeline.py`.
+- Persistent state is filesystem-based rather than service-based: datasets, logs, checkpoints, and metrics are all written to repo directories.
 
 ## Layers
 
-**Entry-point layer:**
-- Purpose: Start runs from Windows, shell, or batch automation.
-- Location: `run.ps1`, `scripts/run_pipeline.sh`, `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`
-- Contains: CLI argument parsing, device resolution, subprocess spawning, log-file routing.
-- Depends on: `src.pipeline`, filesystem layout under `data/` and `outputs/`.
-- Used by: Interactive local runs and benchmark sweeps.
+**Data preparation layer:**
+- Purpose: Convert raw datasets into the repo's `.npz` protocol and search/eval experiment folders.
+- Location: `scripts/preprocess_smd.py`, `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`
+- Contains: raw readers, split search, domain-shift scoring, manifest generation.
+- Depends on: `data/ServerMachineDataset/`, `data/SWaT/`, `data/smd/`, numpy, scikit-learn.
+- Used by: `run.ps1`, `scripts/run_all_smd.py`, and direct `python -m src.pipeline` runs that consume `.npz` bundles.
+
+**Launch layer:**
+- Purpose: Turn user arguments into repeatable `python -m src.pipeline` invocations.
+- Location: `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`, `scripts/run_pipeline.sh`
+- Contains: wrapper CLIs, device detection, subprocess execution, log redirection.
+- Depends on: `src/pipeline.py`, `venv/Scripts/python.exe`, and repo-relative dataset paths.
+- Used by: local interactive runs and benchmark sweeps.
 
 **Orchestration layer:**
-- Purpose: Coordinate end-to-end experiment flow for all supported modes and families.
+- Purpose: Choose the execution path for a run and glue together data loading, model construction, search, training, evaluation, and artifact writes.
 - Location: `src/pipeline.py`
-- Contains: `main()`, family-specific runner functions, default-family `CandidateModel`, TS-TCC pretraining hookup, search loops, final metric serialization.
-- Depends on: `src/data/`, `src/families/`, `src/adaptnas/`, `src/models/`, `src/ts_tcc/`, `src/utils/metrics.py`.
-- Used by: `run.ps1`, `scripts/run_pipeline.sh`, `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`.
+- Contains: `main()`, family dispatch, the inline `CandidateModel`, TS-TCC hookup, default-family search loops, and final result serialization.
+- Depends on: `src/data/`, `src/adaptnas/`, `src/models/`, `src/families/`, `src/ts_tcc/`, `src/utils/metrics.py`.
+- Used by: every project-native launcher and wrapper.
 
-**Family and training layer:**
-- Purpose: Implement paper-specific training loops and scoring rules.
-- Location: `src/families/`, `src/adaptnas/`, `src/ts_tcc/trainer/trainer.py`
-- Contains: Omni ELBO training, USAD dual-loss training, TranAD two-phase reconstruction training, AdaptNAS lower/upper updates, TS-TCC contrastive pretraining.
-- Depends on: `src/data/`, `src/models/`, PyTorch, numpy.
-- Used by: `src/pipeline.py` and the upstream reproduction scripts in `scripts/`.
+**Default-family search layer:**
+- Purpose: Implement `default_nasade` architecture search and adaptation behavior.
+- Location: `src/adaptnas/`, `src/models/`, `src/utils/metrics.py`
+- Contains: `ArchConfig`, bilevel lower/upper updates, discriminator-aware objectives, DeepSVDD fitting/scoring, and reusable encoder/sequence blocks.
+- Depends on: PyTorch, numpy, `src/data/datasets.py`, and TS-TCC-pretrained weights from `src/pipeline.py`.
+- Used by: the `family=default_nasade` branch in `src/pipeline.py`.
 
-**Data adapter layer:**
-- Purpose: Turn raw files or `.npz` bundles into the tensor shapes each family expects.
-- Location: `src/data/`
-- Contains: raw SMD/SWaT readers, normalization helpers, contiguous train/validation splitting, sliding-window datasets, weighted/unlabeled array datasets.
-- Depends on: numpy, pandas, scikit-learn, torch.
-- Used by: `src/pipeline.py`, `src/families/*.py`, `scripts/preprocess_smd.py`, `scripts/run_*_upstream_*.py`.
+**Family-native execution layer:**
+- Purpose: Preserve paper-specific training loops and anomaly-score definitions for non-default families.
+- Location: `src/families/`, supported by `src/data/omni_smd.py`, `src/data/swat.py`, and `src/data/tranad_smd.py`
+- Contains: family dataclasses, model classes, `train_*`, `validate_*`, and `score_*` functions.
+- Depends on: raw-data adapters in `src/data/` and shared metrics in `src/utils/metrics.py`.
+- Used by: the `omni_anomaly`, `usad`, and `tranad` branches in `src/pipeline.py`.
 
 **Artifact layer:**
-- Purpose: Persist generated datasets, checkpoints, plots, benchmark JSON, and logs.
-- Location: `data/smd/`, `data/smd_experiments/`, `outputs/`, `results/`
-- Contains: protocol-ready `.npz` bundles, `split_metadata.json`, `outputs/results.json`, baseline summaries, training curves, saved models.
-- Depends on: every runner that writes files.
-- Used by: `src/pipeline.py`, `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`, `scripts/run_all_smd.py`.
+- Purpose: Persist datasets, manifests, checkpoints, figures, logs, and benchmark summaries.
+- Location: `data/smd/`, `data/smd_experiments/`, `outputs/`, `results/saved_models/`
+- Contains: `.npz` bundles, `split_metadata.json`, `outputs/results.json`, `outputs/benchmarks/*.json`, plots, and checkpoints.
+- Depends on: every launcher and training path.
+- Used by: downstream comparison scripts, plotting scripts, and future benchmark analysis.
 
 ## Data Flow
 
 ### Primary Request Path
 
-1. A launcher builds a `python -m src.pipeline` command and resolves paths/device selection (`run.ps1:131-272`, `scripts/run_pipeline.sh:19-24`).
-2. `main()` parses `--mode` and `--family`, validates inputs, and branches into either raw-family or default-family execution (`src/pipeline.py:1879-2053`).
-3. For `family=default_nasade`, `.npz` inputs are loaded, binarized, normalized to fixed length 128, and mapped into source/target/eval arrays (`src/pipeline.py:2055-2129`).
-4. TS-TCC pretraining builds a self-supervised dataset with augmentations, trains `base_Model` plus `TC`, and keeps the pretrained backbone for later initialization (`src/pipeline.py:2132-2208`, `src/ts_tcc/dataloader/dataloader.py:9-42`, `src/ts_tcc/trainer/trainer.py:144-254`).
-5. Candidate architectures are sampled from `ArchConfig`, instantiated as `CandidateModel`, and searched either by source-only SVDD compactness or by unlabeled AdaptNAS upper objective (`src/adaptnas/search_space.py:6-80`, `src/pipeline.py:246-352`, `src/pipeline.py:2214-2411`, `src/adaptnas/trainer.py:18-249`, `src/adaptnas/optimizer.py:285-365`).
-6. Final scoring fits or reuses DeepSVDD, computes project metrics, writes per-baseline JSON when needed, and always overwrites `outputs/results.json` (`src/pipeline.py:2413-2530`, `src/models/deepsvdd.py:5-41`, `src/utils/metrics.py:4-108`).
+1. A launcher resolves paths and shells into `python -m src.pipeline` (`run.ps1:131`, `scripts/run_all_smd.py:297`).
+2. `main()` parses `--mode` and `--family`, validates the input contract, loads `.npz` arrays for `default_nasade`, and normalizes every window to length 128 (`src/pipeline.py:1879`, `src/pipeline.py:2061`, `src/pipeline.py:2110`).
+3. TS-TCC pretraining builds a self-supervised dataset and trains `base_Model` plus `TC` so the default-family candidates can inherit convolutional weights (`src/pipeline.py:2132`, `src/ts_tcc/dataloader/dataloader.py:8`, `src/ts_tcc/trainer/trainer.py:144`).
+4. The search stage samples `ArchConfig`, instantiates `CandidateModel`, and optimizes either source-only SVDD compactness or the combined unlabeled upper objective (`src/pipeline.py:2214`, `src/pipeline.py:2292`, `src/adaptnas/trainer.py:17`).
+5. The final stage fits DeepSVDD or replays final-only baselines, computes UAD metrics, and overwrites shared JSON artifacts under `outputs/` (`src/pipeline.py:2413`, `src/pipeline.py:2491`, `src/utils/metrics.py:4`).
 
-### Raw Family Path
+### Dataset Preparation Flow
 
-1. `main()` short-circuits early when `--family` is `omni_anomaly`, `usad`, or `tranad` and dispatches to a dedicated runner (`src/pipeline.py:1997-2050`).
-2. Each runner loads raw dataset files through its adapter: `RawSMDMachine.from_root()` for Omni, `RawSWaTDataset.from_csvs()` for USAD, and `load_raw_tranad_smd_machine()` for TranAD (`src/pipeline.py:1256-1875`, `src/data/omni_smd.py:137-157`, `src/data/swat.py:247-276`, `src/data/tranad_smd.py:31-56`).
-3. The runner builds the correct window protocol and arch dataclass, evaluates a fixed baseline, then optionally runs a small partial-NAS search inside the family module (`src/pipeline.py:1272-1464`, `src/pipeline.py:1480-1688`, `src/pipeline.py:1704-1875`, `src/families/omni_anomaly.py:17-405`, `src/families/usad.py:13-306`, `src/families/tranad.py:14-350`).
+1. `scripts/preprocess_smd.py` converts raw machine files into normalized per-machine `source.npz` and `target.npz` bundles (`scripts/preprocess_smd.py:55`, `scripts/preprocess_smd.py:118`).
+2. `scripts/make_uad_smd.py` slices those bundles into `train_normal.npz`, `target_pool_unlabeled.npz`, `val_mixed.npz`, `test_mixed.npz`, and `split_metadata.json` (`scripts/make_uad_smd.py:426`).
+3. `scripts/build_domain_shift_smd.py` fans that split logic out across temporal and cross-machine cases and writes `data/smd_experiments/manifest.json` (`scripts/build_domain_shift_smd.py:123`, `scripts/build_domain_shift_smd.py:168`).
 
 **State Management:**
-- Runtime state is mostly local numpy arrays, PyTorch modules, and dataclass configs passed down the call stack rather than long-lived services.
-- Mutable global outputs live on disk: `outputs/results.json`, `outputs/baselines/`, `outputs/checkpoints/`, `outputs/figures/`, and `results/saved_models/`.
-- Search history and metrics are accumulated in Python dict/list structures and serialized to JSON at the end of each run.
+- Runtime state is mostly local numpy arrays, PyTorch tensors, and dataclass configs passed directly between functions.
+- Mutable global state is filesystem-based: `outputs/results.json`, `outputs/baselines/`, `outputs/checkpoints/`, `outputs/logs/`, and `results/saved_models/ckp_last.pt` are shared across runs.
+- No database, queue, RPC service, or long-lived process state is present in the active architecture.
 
 ## Key Abstractions
 
-**Search arch dataclasses:**
-- Purpose: Describe the searchable architecture knobs for both the default pipeline and family-specific branches.
+**Search config dataclasses:**
+- Purpose: Represent the searchable architecture knobs for the default path and each paper family.
 - Examples: `src/adaptnas/search_space.py`, `src/families/omni_anomaly.py`, `src/families/usad.py`, `src/families/tranad.py`
-- Pattern: Small `@dataclass` config objects with `get_fixed_*` and `sample_*` constructors.
+- Pattern: Small dataclasses with `get_fixed_*` and `sample_*` helper constructors.
 
 **`CandidateModel`:**
-- Purpose: Active default-family model that combines CNN depth search, a sequence block, a classifier, and a domain discriminator.
-- Examples: `src/pipeline.py:246-352`
-- Pattern: Inline research model defined inside the orchestrator and parameterized by `ArchConfig`.
+- Purpose: Active `default_nasade` model that combines CNN stages, a sequence block, a classifier, a domain discriminator, and learnable depth weights.
+- Examples: `src/pipeline.py`
+- Pattern: Inline orchestrator-owned model assembled from `src/models/` primitives plus `arch_params`.
 
 **Dataset wrappers:**
-- Purpose: Normalize how labeled, unlabeled, and weighted batches are presented to training code.
-- Examples: `src/data/datasets.py:7-24`, `src/data/omni_smd.py:105-157`, `src/data/swat.py:215-276`
-- Pattern: Thin `torch.utils.data.Dataset` adapters around numpy arrays or raw series.
+- Purpose: Normalize labeled, unlabeled, and weighted data access for training loops.
+- Examples: `src/data/datasets.py`, `src/data/omni_smd.py`, `src/data/swat.py`
+- Pattern: Thin `torch.utils.data.Dataset` adapters around numpy arrays or raw time series.
 
 **Family modules:**
-- Purpose: Package paper-faithful forward pass, training loop, validation objective, and anomaly score for a specific backbone family.
+- Purpose: Keep family-specific model definitions, training, validation, and scoring together.
 - Examples: `src/families/omni_anomaly.py`, `src/families/usad.py`, `src/families/tranad.py`
-- Pattern: One file per family with config dataclass, model class, `train_*`, `validate_*`, and `score_*` functions.
+- Pattern: One file per family with a dataclass, model class, `train_*`, `validate_*`, and `score_*` functions.
 
 **TS-TCC pretraining stack:**
-- Purpose: Provide reusable self-supervised initialization for the default pipeline.
+- Purpose: Provide self-supervised initialization for the default family before search and final scoring.
 - Examples: `src/ts_tcc/models/model.py`, `src/ts_tcc/models/TC.py`, `src/ts_tcc/trainer/trainer.py`
-- Pattern: Embedded upstream subsystem reused as a backbone rather than as the primary experiment entrypoint.
+- Pattern: Embedded upstream subsystem reused as an internal backbone rather than as the main experiment CLI.
 
 ## Entry Points
 
 **Main project CLI:**
 - Location: `src/pipeline.py`
 - Triggers: `python -m src.pipeline ...`
-- Responsibilities: End-to-end run orchestration across all modes and families.
+- Responsibilities: All project-native training, search, family dispatch, evaluation, and final JSON serialization.
 
 **Windows launcher:**
 - Location: `run.ps1`
 - Triggers: `powershell -File run.ps1 ...`
-- Responsibilities: Validate common arguments, detect CUDA, construct the `src.pipeline` command, and launch it from the project `venv`.
-
-**Benchmark sweep runner:**
-- Location: `scripts/run_all_smd.py`
-- Triggers: Manual batch benchmark execution.
-- Responsibilities: Iterate machine folders or raw machines, spawn repeated pipeline runs, and save benchmark JSON into `outputs/benchmarks/`.
+- Responsibilities: Validate common arguments, resolve the device, build the command line, and call the project `venv`.
 
 **Dataset build CLIs:**
 - Location: `scripts/preprocess_smd.py`, `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`
-- Triggers: Manual data preparation before experiments.
-- Responsibilities: Convert raw SMD into `source.npz`/`target.npz`, then build protocol-specific experiment folders under `data/smd_experiments/`.
+- Triggers: Manual dataset preparation before `default_nasade` runs.
+- Responsibilities: Create normalized machine bundles and protocol-ready search/eval experiment folders.
 
-**Standalone upstream-style CLIs:**
-- Location: `scripts/run_tranad_upstream_smd.py`, `scripts/run_usad_upstream_swat.py`, `src/ts_tcc/main.py`
-- Triggers: Family reproduction runs that do not use the full project orchestrator.
-- Responsibilities: Reproduce or compare against upstream family behavior with their own training/evaluation loops.
+**Batch benchmark runners:**
+- Location: `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`
+- Triggers: Repeated machine-by-machine or case-by-case sweeps.
+- Responsibilities: Spawn runs, store logs, and copy `outputs/results.json` into benchmark folders.
+
+**Standalone comparison paths:**
+- Location: `scripts/run_usad_upstream_swat.py`, `scripts/run_tranad_upstream_smd.py`, `src/ts_tcc/main.py`
+- Triggers: Upstream-faithful comparison runs outside the project-native orchestration path.
+- Responsibilities: Reproduce family-specific baselines or legacy TS-TCC flows without going through the default launcher surface.
 
 ## Architectural Constraints
 
-- **Threading:** Active code is single-process Python with PyTorch tensor execution on CPU or CUDA; parallel sweeps are done by sequential subprocess spawning in `scripts/run_all_smd.py`.
-- **Global state:** `outputs/results.json` is a shared single-run sink overwritten by every successful invocation of `src/pipeline.py`; `outputs/checkpoints/`, `outputs/figures/`, and `results/saved_models/` are also shared write targets.
-- **Circular imports:** No active circular dependency chain was detected in `src/`; imports flow mainly from `src/pipeline.py` downward into `src/data/`, `src/families/`, `src/models/`, `src/adaptnas/`, and `src/ts_tcc/`.
-- **Family branching:** `default_nasade` is the only family that uses TS-TCC pretraining and DeepSVDD; `omni_anomaly`, `usad`, and `tranad` bypass that stack and rely on family-native objectives.
-- **Path assumptions:** Several scripts mutate `sys.path` or assume fixed repo-relative locations like `external/usad_upstream`, `data/ServerMachineDataset`, and `./venv/Scripts/python.exe`.
+- **Threading:** Active training code is single-process Python with PyTorch execution on CPU or CUDA; parallelism comes from separate CLI invocations, not internal worker orchestration.
+- **Global state:** `outputs/results.json` is a shared sink overwritten by every successful `src/pipeline.py` run, and `outputs/checkpoints/` plus `results/saved_models/` are also shared write targets.
+- **Family dispatch:** `default_nasade` is the only branch that uses TS-TCC pretraining, `CandidateModel`, and DeepSVDD; `omni_anomaly`, `usad`, and `tranad` bypass that stack entirely.
+- **Wrapper surface area:** `src/pipeline.py` accepts `default_nasade`, `omni_anomaly`, `usad`, and `tranad`, but `run.ps1` validates only `default_nasade`, `omni_anomaly`, and `usad`, and `scripts/run_all_smd.py` exposes only `default_nasade` and `omni_anomaly`.
+- **TS-TCC config reuse:** The default-family path hardcodes `src.ts_tcc.config_files.HAR_Configs.Config` for pretraining setup, so TS-TCC hyperparameter changes currently route through that config object even for SMD-based runs.
+- **Inactive alternates:** `src/adaptnas/model_adaptnas.py` and `src/ts_tcc/main.py` are present in the repo but are not part of the active project-native execution path driven by `src/pipeline.py`.
 
 ## Anti-Patterns
 
-### Orchestrator-Embedded Model Logic
+### Orchestrator-Owned Model Logic
 
-**What happens:** `src/pipeline.py` defines `TCNBlock`, `CandidateModel`, three family runners, the full CLI, search loops, and final serialization in one file.
-**Why it's wrong:** Adding a new family or changing the default model forces edits in the same large module, which couples model internals to CLI flow and makes reuse harder.
-**Do this instead:** Put reusable model code under `src/models/` or `src/families/`, and keep `src/pipeline.py` limited to dispatch and high-level wiring.
+**What happens:** `src/pipeline.py` contains the CLI, family dispatch, the active `CandidateModel`, TS-TCC initialization, search loops, and final serialization.
+**Why it's wrong:** Any change to the default-family model, search behavior, or result packaging forces edits in the same large module, which couples research logic to launch orchestration.
+**Do this instead:** Keep `src/pipeline.py` focused on dispatch and move reusable model/search pieces into `src/models/`, `src/adaptnas/`, or `src/families/`.
 
-### Duplicate Execution Paths for Similar Work
+### Shared Artifact Sink
 
-**What happens:** `scripts/run_usad_swat.py` and `scripts/run_tranad_smd.py` shell into `src.pipeline`, while `scripts/run_usad_upstream_swat.py` and `scripts/run_tranad_upstream_smd.py` reimplement training/evaluation directly.
-**Why it's wrong:** Metrics, preprocessing, and output formats can drift between wrappers and reproduction scripts because there is no single shared orchestration contract.
-**Do this instead:** Use `src/pipeline.py` plus `src/data/` and `src/utils/metrics.py` for project-native runs, and keep direct-upstream reproductions isolated and clearly labeled as comparisons.
+**What happens:** Every project-native run writes to the same `outputs/results.json`, `outputs/checkpoints/`, and `results/saved_models/` locations.
+**Why it's wrong:** Repeated or parallel runs can clobber each other, and wrappers must copy artifacts immediately to avoid losing the previous result.
+**Do this instead:** Write case-scoped outputs under `outputs/benchmarks/<run>/` or another per-run directory and only mirror a summary file when needed.
+
+### Wrapper/Core Drift
+
+**What happens:** Wrapper CLIs do not expose the same family surface as `src/pipeline.py`; for example, `run.ps1` omits `tranad`, and `scripts/run_all_smd.py` omits both `usad` and `tranad`.
+**Why it's wrong:** The public entry points lag the actual architecture, so users can add a core capability without making it reachable through the expected operational scripts.
+**Do this instead:** When adding or changing a family or mode, update `src/pipeline.py`, `run.ps1`, and the relevant `scripts/run_*.py` wrappers in the same phase.
 
 ## Error Handling
 
-**Strategy:** Fail fast on missing files, invalid shapes, invalid ratios, or unsupported family/mode combinations, and let wrappers surface failures through exit codes and log files.
+**Strategy:** Fail fast on missing files, invalid shapes, unsupported family/mode combinations, or broken protocol inputs, and let wrappers surface failures through exit codes plus log files.
 
 **Patterns:**
-- Loaders raise `FileNotFoundError` or `ValueError` close to the data boundary (`src/data/omni_smd.py`, `src/data/swat.py`, `src/data/tranad_smd.py`, `src/pipeline.py`).
-- Batch wrappers capture stdout/stderr into `outputs/logs/` and check subprocess return codes before saving benchmark JSON (`scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`).
+- Data-boundary helpers raise `FileNotFoundError` or `ValueError` close to the offending input (`src/data/omni_smd.py`, `src/data/swat.py`, `src/data/tranad_smd.py`, `src/pipeline.py`).
+- Batch wrappers redirect stdout and stderr to `outputs/logs/` and gate benchmark persistence on subprocess return codes (`scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`).
+- Dataset builders warn and continue when sweeping many cases, but they raise on an individual case when a required split cannot be produced (`scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`).
 
 ## Cross-Cutting Concerns
 
-**Logging:** Console `print()` calls dominate the main pipeline, while batch runners redirect full runs to `outputs/logs/`; TS-TCC also writes checkpoints into `results/saved_models/`.
-**Validation:** Argument validation is split between `argparse` choices and explicit runtime checks on file existence, class balance, window lengths, and dataset protocol completeness.
-**Authentication:** Not applicable; the codebase is local/offline research code with filesystem-based inputs.
+**Logging:** Runtime logging is `print()`-driven in `src/pipeline.py` and family scripts, while sweep wrappers redirect full command output into `outputs/logs/`.
+**Validation:** Input validation is split between `argparse` choices, explicit file checks, protocol-size checks, class-balance checks, and split-search constraints.
+**Authentication:** Not applicable; the active architecture is offline, filesystem-driven research code.
 
 ---
 
