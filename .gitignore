@@ -10,3 +10,5 @@ build/
 env/
 venv/
 external/
+.codex/
+data/
