@@ -1,103 +1,113 @@
 # External Integrations
 
-**Analysis Date:** 2026-04-27
+**Analysis Date:** 2026-05-10
 
 ## APIs & External Services
 
-**Runtime APIs:**
-- None detected in first-party code under `src/`, `scripts/`, `run.ps1`, or `README.md`.
+**Datasets:**
+- Server Machine Dataset (SMD) local copy - raw time-series source for `family=omni_anomaly`, `family=tranad`, and SMD preprocessing utilities
+  - SDK/Client: local filesystem readers in `src/data/omni_smd.py`, `src/data/tranad_smd.py`, and `scripts/preprocess_smd.py`
+  - Auth: None
+- SWaT local CSV copy - raw train/test source for `family=usad`
+  - SDK/Client: local filesystem readers in `src/data/swat.py`
+  - Auth: None
+
+**Bundled Research Code:**
+- TS-TCC upstream implementation - vendored self-supervised encoder pretraining stack reused by the main pipeline
+  - SDK/Client: local package in `src/ts_tcc/`
+  - Auth: None
+- USAD upstream reference implementation - benchmark-only import used for side-by-side comparison runs
+  - SDK/Client: local vendored module in `external/usad_upstream/`, loaded by `scripts/run_usad_upstream_swat.py`
+  - Auth: None
+
+**Network Services:**
+- Not detected in `src/` or `scripts/` main execution paths
   - SDK/Client: Not applicable
   - Auth: Not applicable
-
-**Datasets on disk:**
-- Raw SMD dataset under `data/ServerMachineDataset/` is the source for paper-style Omni and TranAD runs.
-  - SDK/Client: `src/data/omni_smd.py`, `src/data/tranad_smd.py`, `scripts/preprocess_smd.py`
-  - Auth: None
-- Prepared SMD `.npz` splits under `data/smd/` and experiment suites under `data/smd_experiments/` are the canonical inputs for `default_nasade` and `adaptnas_combined`.
-  - SDK/Client: `src/pipeline.py`, `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`
-  - Auth: None
-- Raw SWaT CSV files under `data/SWaT/` are the input for `family=usad`.
-  - SDK/Client: `src/data/swat.py`, `src/pipeline.py`, `run.ps1`
-  - Auth: None
-- Auxiliary TS-TCC datasets are kept locally under `data/UCI HAR Dataset/`, `data/uci_har/`, and the preprocessing paths referenced by `src/ts_tcc/README.md`.
-  - SDK/Client: `src/ts_tcc/data_preprocessing/uci_har/preprocess_har.py`, `scripts/preprocess_sleepedf.py`
-  - Auth: None
-
-**Vendored upstream baselines:**
-- `external/OmniAnomaly` is a local copy of the OmniAnomaly reference implementation used for comparison and environment reference.
-  - SDK/Client: local Python package tree in `external/OmniAnomaly/` and `external/OmniAnomaly/requirements.txt`
-  - Auth: None
-- `external/tranad_upstream` is a local copy of the TranAD reference implementation used for comparison and dependency reference.
-  - SDK/Client: local Python package tree in `external/tranad_upstream/` and `external/tranad_upstream/requirements.txt`
-  - Auth: None
-- `external/usad_upstream` is imported directly by `scripts/run_usad_upstream_swat.py` through `sys.path` to run an upstream-faithful USAD benchmark.
-  - SDK/Client: `scripts/run_usad_upstream_swat.py`, `external/usad_upstream/usad.py`
-  - Auth: None
-- `external/miniconda3` and `external/conda-envs/omni36` provide a local legacy Conda toolchain for older baseline workflows.
-  - SDK/Client: `external/miniconda3/`, `external/conda-envs/omni36/conda-meta/history`
+- `external/usad_upstream/gdrivedl.py` contains URL-fetching code for upstream data download, but no repo runner imports or calls it
+  - SDK/Client: `urllib`
   - Auth: None
 
 ## Data Storage
 
 **Databases:**
-- None. No SQL, NoSQL, vector store, or ORM integration was detected in `src/` or `scripts/`.
+- None
   - Connection: Not applicable
   - Client: Not applicable
 
 **File Storage:**
-- Local filesystem only.
-- Raw inputs live under `data/ServerMachineDataset/`, `data/SWaT/`, and TS-TCC-related dataset folders in `data/`.
-- Prepared experiment inputs live under `data/smd/` and `data/smd_experiments/`.
-- Run artifacts are written to `outputs/results.json`, `outputs/baselines/*.json`, `outputs/baselines_summary.json`, `outputs/checkpoints/*.pt`, `outputs/figures/*.png`, `outputs/logs/`, and benchmark folders in `outputs/benchmarks/`.
-- Standalone TS-TCC runs write experiment artifacts under `results/` and the log directories managed by `src/ts_tcc/main.py`.
+- Local filesystem only
+- Raw SMD input layout:
+  - `data/ServerMachineDataset/train/*.txt`
+  - `data/ServerMachineDataset/test/*.txt`
+  - `data/ServerMachineDataset/test_label/*.txt`
+- Raw SWaT input layout:
+  - `data/SWaT/SWaT_Dataset_Normal_v1.csv`
+  - `data/SWaT/SWaT_Dataset_Attack_v0.csv`
+- Generated windowed datasets:
+  - `data/smd/machine-*/source.npz`
+  - `data/smd/machine-*/target.npz`
+  - `data/smd_experiments/**/train_normal.npz`
+  - `data/smd_experiments/**/target_pool_unlabeled.npz`
+  - `data/smd_experiments/**/val_mixed.npz`
+  - `data/smd_experiments/**/test_mixed.npz`
+  - `data/smd_experiments/**/split_metadata.json`
+  - `data/smd_experiments/manifest.json`
+- Runtime and benchmark outputs:
+  - `outputs/results.json`
+  - `outputs/baselines/*.json`
+  - `outputs/baselines_summary.json`
+  - `outputs/benchmarks/**/*.json`
+  - `outputs/logs/*.txt`
+  - `outputs/checkpoints/*.pt`
+  - `outputs/figures/*.png`
 
 **Caching:**
-- None. Reusable state is persisted as files on disk: checkpoints, `.npz` datasets, `.npy` diagnostics, JSON summaries, and figures.
+- None
+- The nearest equivalent is reusable model state saved under `outputs/checkpoints/`
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- None.
-  - Implementation: No API keys, OAuth flows, tokens, or user/session code were detected in `src/`, `scripts/`, `run.ps1`, or `README.md`.
+- None
+  - Implementation: the repo has no user accounts, tokens, OAuth flows, API keys, or secret-backed identity layer in `src/` or `scripts/`
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None.
+- None
 
 **Logs:**
-- Batch wrappers in `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_tranad_upstream_smd.py`, `scripts/run_usad_swat.py`, and `scripts/run_usad_upstream_swat.py` write local log files under `outputs/logs/`.
-- `src/pipeline.py` writes structured result payloads to `outputs/results.json` and related JSON artifacts, and `scripts/export_figures.py` turns them into plots.
+- Plain stdout/stderr redirected into local files by `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, and `scripts/run_tranad_smd.py`
+- Structured experiment summaries are written as JSON by `src/pipeline.py`, `scripts/run_usad_upstream_swat.py`, `scripts/run_tranad_upstream_smd.py`, and `scripts/compare_mode_benchmarks.py`
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Not applicable. No web host, daemon, scheduler, or service deployment target is configured.
+- None
 
 **CI Pipeline:**
-- None detected. No `.github/workflows/`, `.gitlab-ci.yml`, `azure-pipelines.yml`, `tox.ini`, or `noxfile.py` is present at the repo root.
+- None detected
 
 ## Environment Configuration
 
 **Required env vars:**
-- None required by first-party application code.
-- `src/pipeline.py` sets `PYTHONHASHSEED` internally for deterministic seeding.
-- `scripts/run_pipeline.sh` exports `CUDA_VISIBLE_DEVICES` for local GPU selection.
-- `run.ps1` resolves CPU vs CUDA from CLI flags and local PyTorch availability instead of secret-backed configuration.
-- Practical path note: `src/pipeline.py` and `run.ps1` default SWaT paths to `data/SWaT/SWaT_Dataset_Normal_v1.csv` and `data/SWaT/SWaT_Dataset_Attack_v0.csv`, while this checkout currently contains `data/SWaT/normal.csv` and `data/SWaT/attack.csv`.
+- None required by the main pipeline
+- Optional `CUDA_VISIBLE_DEVICES` is set by `scripts/run_pipeline.sh`
+- `PYTHONHASHSEED` is set programmatically by `src/pipeline.py`
 
 **Secrets location:**
-- Not detected for first-party code.
-- No root `.env*` files are present, and no secret-management system is wired into `src/` or `scripts/`.
+- No secret-management files or secret-backed integration points were detected in the scanned repo paths
+- No `.env` files were detected at repo root during this scan
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None.
+- None
 
 **Outgoing:**
-- None.
+- None
 
 ---
 
-*Integration audit: 2026-04-27*
+*Integration audit: 2026-05-10*

@@ -1,81 +1,65 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-04-27
+**Analysis Date:** 2026-05-10
 
 ## Test Framework
 
 **Runner:**
-- No repo-native automated test runner is detected. The repository root does not contain `pytest`, `unittest`, `tox`, `nox`, or CI workflow configuration.
-- Validation is script-driven through `src/pipeline.py`, `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_upstream_smd.py`, and `scripts/run_usad_upstream_swat.py`.
+- Not detected for first-party code. No `pytest`, `unittest`, `nose`, `tox`, `nox`, or coverage configuration is present at the repo root, and no first-party test files are present outside ignored vendor and environment directories.
+- Config: Not applicable
 
 **Assertion Library:**
 - Not applicable for a dedicated test suite.
-- The effective quality gate is successful execution plus metric output, exception checks, and artifact generation in `outputs/results.json`, `outputs/benchmarks/*`, and `outputs/logs/*`.
+- Runtime validation relies on Python exceptions, assertions in a few legacy modules, and metric checks inside `src/utils/metrics.py`.
 
 **Run Commands:**
 ```bash
-python -m src.pipeline --mode uad_source --family default_nasade --dataset_or_paths ...
-python scripts/run_all_smd.py --mode uad_source --family default_nasade --data_root data/smd_experiments/cross_machine_medium
-python scripts/run_tranad_smd.py --machine machine-1-1 --tag smoke
-python scripts/run_usad_swat.py --tag smoke
-python scripts/run_tranad_upstream_smd.py --machine machine-1-1 --tag smoke
-python scripts/run_usad_upstream_swat.py --tag smoke
-python scripts/compare_mode_benchmarks.py --source_dirs outputs/benchmarks/... --combined_dirs outputs/benchmarks/... --out outputs/benchmarks/compare.json
-.\run.ps1 -Mode uad_source -Family default_nasade -DataDir data\smd_experiments\temporal_medium\machine-1-1
+python -m src.pipeline --mode uad_source --family default_nasade --dataset_or_paths data/smd/machine-1-1/train_normal.npz,data/smd/machine-1-1/val_mixed.npz,data/smd/machine-1-1/test_mixed.npz
+python scripts/run_all_smd.py --mode uad_source --family default_nasade --data_root data/smd_experiments/cross_machine_medium --tag smoke
+python scripts/compare_mode_benchmarks.py --source_dirs outputs/benchmarks/default_nasade-uad_source-cross_medium_source --combined_dirs outputs/benchmarks/default_nasade-adaptnas_combined-cross_medium_combined --out outputs/benchmarks/compare_cross_medium.json
 ```
+- `run.ps1` wraps the same flow for Windows users and adds parameter validation through `ValidateSet`.
 
 ## Test File Organization
 
 **Location:**
-- No top-level `tests/` package is present.
-- Verification entrypoints live in `scripts/`, `src/pipeline.py`, and `run.ps1`.
-- Generated verification artifacts live under `outputs/results.json`, `outputs/logs/*.txt`, `outputs/benchmarks/*/*.json`, and `data/smd_experiments/*`.
+- No first-party `tests/` directory or co-located `test_*.py` files were detected under `src/`, `scripts/`, or the repo root.
+- Ignore the many `test_*.py` files under `external/` and `venv/`; `.gitignore` excludes those directories, so they are not project-owned coverage.
 
 **Naming:**
-- Runner names encode family, dataset, and fidelity level: `scripts/run_tranad_smd.py`, `scripts/run_tranad_upstream_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_usad_upstream_swat.py`.
-- Benchmark directories follow `<family>-<mode>-<tag>` or `<family>-upstream-<tag>`, for example `outputs/benchmarks/default_nasade-uad_source-...` and `outputs/benchmarks/tranad-upstream-smoke`.
-- `src/ts_tcc/data_preprocessing/sleep-edf/generate_train_val_test.py` is a dataset-preparation utility despite its name; it is not part of an automated test harness.
+- Not applicable for automated tests.
+- Manual validation entrypoints live under `scripts/` and `src/pipeline.py`.
 
 **Structure:**
 ```text
-scripts/                     # verification runners, comparison tools, dataset builders
-run.ps1                      # Windows wrapper for end-to-end runs
-outputs/results.json         # latest single-run payload
-outputs/logs/*.txt           # captured logs from scripted runs
-outputs/benchmarks/*/*.json  # archived per-case benchmark artifacts
-data/smd_experiments/*/      # generated evaluation fixtures and metadata
+scripts/                 # dataset builders, runners, benchmark comparison
+src/pipeline.py          # single-run end-to-end entrypoint
+run.ps1                  # Windows wrapper with CLI validation
+outputs/benchmarks/      # generated regression artifacts
+outputs/results.json     # latest single-run result
 ```
+
+## Validation Practices
+
+- Validate data and CLI inputs before expensive training starts. Common guard sites are `src/data/omni_smd.py`, `src/data/swat.py`, `scripts/preprocess.py`, `scripts/preprocess_smd.py`, and `run.ps1`.
+- Prefer deterministic validation inputs. `src/pipeline.py` and `scripts/run_tranad_upstream_smd.py` explicitly seed Python, NumPy, and PyTorch RNGs before runs.
+- Treat serialized artifacts as the test oracle. The repo checks regression behavior by writing `outputs/results.json`, `outputs/baselines/*.json`, `outputs/baselines_summary.json`, and `outputs/benchmarks/*.json`, then inspecting or comparing those files.
+- Use manual dataset fixtures generated by scripts instead of hand-written unit fixtures. `scripts/preprocess_smd.py`, `scripts/make_uad_smd.py`, and `scripts/build_domain_shift_smd.py` create the inputs consumed by later validation runs.
 
 ## Test Structure
 
 **Suite Organization:**
-```python
-def main():
-    ap = argparse.ArgumentParser()
-    ...
-    rc = run_cmd(cmd, log_file)
-    if rc != 0:
-        sys.exit(rc)
-
-    result = load_results_json()
-    if result is None:
-        sys.exit(1)
-
-    save_json(os.path.join(bench_dir, "...json"), result)
-
-if __name__ == "__main__":
-    main()
+```text
+1. Prepare or select dataset artifacts under data/smd/ or data/smd_experiments/
+2. Run src.pipeline or a script wrapper in scripts/
+3. Save JSON, NPZ, PT, or PNG artifacts under outputs/
+4. Inspect metrics_uad fields or compare benchmark directories
 ```
 
 **Patterns:**
-- Verification is benchmark-first and script-first rather than assertion-first.
-- A typical run does four things:
-  1. Build or select a dataset protocol from `data/` or `data/smd_experiments/`.
-  2. Execute `src.pipeline` directly or through a family-specific runner.
-  3. Compute anomaly metrics from the produced scores.
-  4. Save JSON artifacts for later comparison.
-- Comparison happens by reading saved benchmark directories in `scripts/compare_mode_benchmarks.py`, not by rerunning models inside a unit-test framework.
-- Optional result visualization is handled after the run by `scripts/export_figures.py`.
+- Setup pattern: create directories with `os.makedirs(..., exist_ok=True)`, load or normalize raw data, and derive windows before training. See `scripts/preprocess_smd.py`, `scripts/make_uad_smd.py`, `scripts/run_all_smd.py`, and `src/pipeline.py`.
+- Teardown pattern: none automated. Runs leave artifacts on disk for inspection under `outputs/` and generated datasets under `data/`.
+- Assertion pattern: fail fast on invalid files, shapes, or parameters with `ValueError`, `FileNotFoundError`, or `RuntimeError`. Examples are `src/data/swat.py`, `src/data/omni_smd.py`, `src/families/usad.py`, and `src/pipeline.py`.
 
 ## Mocking
 
@@ -83,34 +67,42 @@ if __name__ == "__main__":
 
 **Patterns:**
 ```python
-try:
-    import seaborn  # type: ignore
-except Exception:
-    sys.modules["seaborn"] = types.ModuleType("seaborn")
+if not os.path.exists(path):
+    raise FileNotFoundError(path)
+if "X" not in data:
+    raise ValueError(f"{path} missing key 'X'")
 ```
+- The real validation path exercises filesystem IO, PyTorch training, and JSON outputs rather than isolated mocks.
+- Wrapper scripts such as `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, and `scripts/run_tranad_smd.py` shell out to subprocesses and log files; if you introduce automated tests here, mock the process boundary and temp output paths.
 
 **What to Mock:**
-- Only optional import shims appear, such as the `seaborn` fallback in `scripts/run_usad_upstream_swat.py` so the upstream USAD code can import cleanly.
+- `subprocess.Popen` and log-file writes in `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, and `scripts/run_tranad_smd.py`.
+- Optional compatibility imports such as the `seaborn` fallback path in `scripts/run_usad_upstream_swat.py`.
+- Large raw dataset reads from `src/data/swat.py` and `src/data/omni_smd.py` when a test only needs control-flow coverage.
 
 **What NOT to Mock:**
-- Core validation paths use real datasets, real subprocesses, real metric functions, and real output files.
-- `scripts/run_all_smd.py` executes `python -m src.pipeline` and captures full logs instead of simulating the pipeline.
+- `src/utils/metrics.py` scoring utilities, because those are a primary regression surface.
+- Window builders and label alignment helpers in `src/data/swat.py` and `src/data/omni_smd.py`.
+- Family validation helpers such as `validate_usad_on_windows`, `validate_tranad_on_windows`, and `score_omni_series`, unless the test purpose is only CLI glue.
 
 ## Fixtures and Factories
 
 **Test Data:**
 ```python
-save_npz(str(out_train), X_train, y_train)
-save_npz(str(out_target_pool), split["X_pool"], None)
-save_npz(str(out_val), split["X_val"], split["y_val"])
-save_npz(str(out_test), split["X_test"], split["y_test"])
+np.savez(out_dir / "source.npz", X=Xs, y=ys)
+np.savez(out_dir / "target.npz", X=Xt, y=yt)
+with open(out_meta, "w", encoding="utf-8") as f:
+    json.dump(metadata, f, indent=2)
 ```
+- The repo generates most fixtures programmatically rather than storing them under a dedicated test data directory.
+- `scripts/preprocess_smd.py` creates `source.npz` and `target.npz`.
+- `scripts/make_uad_smd.py` builds `train_normal.npz`, `target_pool_unlabeled.npz`, `val_mixed.npz`, `test_mixed.npz`, and `split_metadata.json`.
+- `src/ts_tcc/trainer/trainer.py` and `src/pipeline.py` create `*.pt` checkpoints and JSON summaries that can be used as manual regression evidence.
 
 **Location:**
-- `scripts/preprocess_smd.py` builds per-machine `source.npz` and `target.npz` fixtures under `data/smd/*`.
-- `scripts/make_uad_smd.py` builds experiment fixtures under `data/smd_experiments/*` and writes `split_metadata.json`.
-- `scripts/build_domain_shift_smd.py` expands those fixtures into benchmark suites and writes `data/smd_experiments/manifest.json`.
-- Raw family-specific fixtures live under `data/ServerMachineDataset` for `omni_anomaly` and `tranad`, and under `data/SWaT` for `usad`.
+- Generated datasets live under `data/smd/` and `data/smd_experiments/`.
+- Run outputs live under `outputs/results.json`, `outputs/baselines/`, `outputs/checkpoints/`, `outputs/figures/`, and `outputs/benchmarks/`.
+- Vendored TS-TCC training logs and checkpoints live under `experiments_logs/` from `src/ts_tcc/main.py`.
 
 ## Coverage
 
@@ -118,82 +110,44 @@ save_npz(str(out_test), split["X_test"], split["y_test"])
 
 **View Coverage:**
 ```bash
-Not applicable
+# Not applicable: no automated coverage command is configured
 ```
-
-- No coverage report generator, threshold, or HTML/XML artifact is detected in the repository root.
+- There is no CI coverage gate, no `coverage.py` config, and no badge or report target in `README.md`.
+- Coverage today is behavioral and artifact-based, not line-based.
 
 ## Test Types
 
 **Unit Tests:**
-- Not detected in repo-owned code.
-- The closest unit-like checks are inline validation guards in `src/data/swat.py`, `src/data/omni_smd.py`, `src/data/tranad_smd.py`, `src/utils/metrics.py`, and `scripts/preprocess.py`.
+- Not used for first-party code at present.
+- The closest substitutes are pure helper functions with strong input guards in `src/utils/metrics.py`, `src/utils/schedulers.py`, `src/data/omni_smd.py`, and `src/data/swat.py`. Those are the best candidates if unit tests are added later.
 
 **Integration Tests:**
-- Integration-style benchmarking is the dominant validation mode.
-- `src/pipeline.py` validates `default_nasade`, `omni_anomaly`, `usad`, and `tranad` by producing `outputs/results.json`.
-- `scripts/run_all_smd.py` sweeps many cases, writes `outputs/logs/*.txt`, and archives successful case JSONs under `outputs/benchmarks/`.
-- `scripts/run_tranad_smd.py` and `scripts/run_usad_swat.py` run targeted family checks when a full sweep is unnecessary.
+- This is the dominant validation style.
+- `python -m src.pipeline` validates the full training and evaluation stack for a single run.
+- `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_upstream_swat.py`, and `scripts/run_tranad_upstream_smd.py` validate scripted multi-run or upstream-comparison flows.
 
 **E2E Tests:**
-- Browser-style E2E tests are not used.
-- Operational end-to-end checks are CLI-driven through `run.ps1`, `scripts/run_pipeline.sh`, and the benchmark runners in `scripts/`.
-
-## Validation and Verification Workflow
-
-- For `default_nasade`, the current workflow is:
-  1. Build or select an experiment folder with `scripts/preprocess_smd.py`, `scripts/make_uad_smd.py`, or `scripts/build_domain_shift_smd.py`.
-  2. Run `src.pipeline` directly, `run.ps1`, or `scripts/run_all_smd.py`.
-  3. Inspect `outputs/results.json` and any `outputs/logs/*.txt` files.
-  4. Optionally archive comparison-ready results under `outputs/benchmarks/`.
-- For `usad` and `tranad`, use the dedicated family runners `scripts/run_usad_swat.py` and `scripts/run_tranad_smd.py`. `scripts/run_all_smd.py` does not cover those families.
-- For upstream verification, run `scripts/run_usad_upstream_swat.py` or `scripts/run_tranad_upstream_smd.py` and compare the saved JSON payloads against repo-native runs.
-- For mode comparisons, use `scripts/compare_mode_benchmarks.py` on saved source-only and combined benchmark directories instead of relying on a single in-process assertion.
-- For visual inspection, use `scripts/export_figures.py` to render search curves, ROC plots, and saved training curves from `outputs/results.json`.
-
-## Benchmark Artifacts
-
-- Single-run payloads are written to `outputs/results.json`.
-- Archived benchmark evidence is written under `outputs/benchmarks/*/*.json`.
-- Sweep and subprocess diagnostics are written to `outputs/logs/*.txt`.
-- Dataset metadata used for reproducibility is stored in `data/smd_experiments/*/split_metadata.json` and `data/smd_experiments/manifest.json`.
-- Auxiliary verification outputs such as figures and checkpoints are stored under `outputs/figures/`, `outputs/checkpoints/`, and `outputs/baselines*.json`.
-
-## Reproducibility Signals
-
-- Most benchmark-facing paths expose a seed or hard-code `42`, including `src/pipeline.py`, `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`, and `scripts/run_tranad_upstream_smd.py`.
-- Dataset builders persist split metadata and domain-shift diagnostics so evaluation inputs remain auditable after the run.
-- Benchmark payloads preserve architecture choices, curves, and metric summaries in JSON rather than only printing them to stdout.
-- Reproducibility is partial rather than uniform because `src/ts_tcc/main.py` uses a different CuDNN determinism policy than the main UAD pipeline.
+- Manual end-to-end runs are supported via `run.ps1` and the README command sequences in `README.md`.
+- No automated CI or nightly benchmark runner is present in the repo.
 
 ## Common Patterns
 
 **Async Testing:**
 ```python
-Not applicable
+# Not applicable: the repo does not use async code paths for testing or runtime
 ```
 
 **Error Testing:**
 ```python
-if not os.path.exists(path):
-    raise FileNotFoundError(path)
-if "X" not in data:
-    raise ValueError(f"{path} missing key 'X'")
-if rc != 0:
-    sys.exit(rc)
+if window_length <= 0:
+    raise ValueError(f"window_length must be positive, got {window_length}")
+if len(x_test) != len(y_test):
+    raise ValueError(
+        f"SWaT test/label length mismatch after downsampling: {len(x_test)} vs {len(y_test)}"
+    )
 ```
-
-- Loader and preprocessing validation rejects bad files and incompatible shapes early in `src/data/*.py` and `scripts/preprocess*.py`.
-- Metric code handles degenerate labels and threshold edge cases in `src/utils/metrics.py` and `src/families/omni_eval.py`.
-- Batch scripts continue through `[WARN]` or `[FAIL]` cases where partial success is useful, especially in `scripts/build_domain_shift_smd.py` and `scripts/run_all_smd.py`.
-
-## Current Gaps
-
-- No automated regression suite exists for loaders, metric helpers, architecture samplers, JSON schemas, or benchmark comparisons.
-- No CI workflow, coverage gate, or single `test` command is defined at the repository root.
-- Verification coverage is uneven across families because `scripts/run_all_smd.py` omits `usad` and `tranad`.
-- Legacy `src/ts_tcc/*` utilities and preprocessing scripts do not have repo-native regression checks around them.
+- Preserve this fail-fast style when adding automated tests: verify boundary validation in `src/data/swat.py`, `src/data/omni_smd.py`, and `src/families/omni_anomaly.py` before checking training metrics.
+- For model training paths, compare serialized `metrics_uad` fields and saved benchmark JSON instead of only checking console output.
 
 ---
-
-*Testing analysis: 2026-04-27*
+*Testing analysis: 2026-05-10*

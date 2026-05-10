@@ -1,89 +1,92 @@
 # Technology Stack
 
-**Analysis Date:** 2026-04-27
+**Analysis Date:** 2026-05-10
 
 ## Languages
 
 **Primary:**
-- Python 3.12.13 is the active runtime in the checked-in virtual environment at `venv/`, and all first-party implementation code lives under `src/` and `scripts/`.
+- Python 3.12.13 - active interpreter in `venv\Scripts\python.exe`; all core training, data preparation, benchmarking, and evaluation code lives under `src/` and `scripts/`
 
 **Secondary:**
-- PowerShell drives the main Windows launcher in `run.ps1`.
-- Bash is supported by the lightweight Unix-style wrapper in `scripts/run_pipeline.sh`.
-- Markdown is used for operational and research docs in `README.md` and `src/ts_tcc/README.md`.
-- Jupyter notebook and MATLAB artifacts exist for research support in `flowchart.ipynb`, `src/ts_tcc/data_preprocessing/fault_diagnosis/Data_preprocessing.ipynb`, and `src/ts_tcc/data_preprocessing/fault_diagnosis/Data_loading_segmentation.m`.
+- PowerShell - Windows execution wrapper and CUDA/device selection in `run.ps1`
+- Bash - POSIX execution wrapper in `scripts/run_pipeline.sh`
+- Jupyter Notebook - exploratory and upstream reference artifacts in `flowchart.ipynb`, `external/usad_upstream/USAD.ipynb`, and `src/ts_tcc/data_preprocessing/fault_diagnosis/Data_preprocessing.ipynb`
+- MATLAB - upstream TS-TCC preprocessing artifact in `src/ts_tcc/data_preprocessing/fault_diagnosis/Data_loading_segmentation.m`
 
 ## Runtime
 
 **Environment:**
-- Local `venv/` is the primary runtime. `run.ps1` invokes `venv/Scripts/python.exe` directly and fails fast if that interpreter is missing.
-- `setup.py` declares `python_requires=">=3.8"`, but the checked-in environment is already on Python 3.12.
-- Optional CUDA acceleration is documented in `README.md` and is selected dynamically by `run.ps1` after checking `torch.cuda.is_available()`.
-- A legacy baseline environment exists at `external/conda-envs/omni36`; `external/conda-envs/omni36/conda-meta/history` shows it was created from `external/miniconda3` with Python 3.6 for older Omni-related tooling.
+- CPython 3.12.13 detected in `venv\Scripts\python.exe`
+- `setup.py` declares `python_requires=">=3.8"` for the package `adapt_ts_project`
+- Runtime device selection is local-process based: `run.ps1` probes `torch.cuda.is_available()` and `src/pipeline.py` defaults to `cuda` when available, otherwise `cpu`
 
 **Package Manager:**
-- `pip` is the active installer path in `README.md`, `requirements.txt`, and the environment snapshot `pip_list.txt`.
-- `setuptools` packages the project through `setup.py` with `find_packages(where="src")`.
-- Lockfile: missing. The repo has `requirements.txt`, but no `pyproject.toml`, `poetry.lock`, `Pipfile.lock`, or `uv.lock`.
+- `pip` 25.0.1 inside `venv`
+- `setuptools` packaging via `setup.py`
+- Lockfile: missing
 
 ## Frameworks
 
 **Core:**
-- PyTorch 2.11.0 and `torchvision` 0.26.0 are the core ML runtime for `src/pipeline.py`, `src/models/`, `src/adaptnas/`, and `src/families/`.
-- NumPy 2.4.3, pandas 3.0.1, SciPy 1.17.1, and scikit-learn 1.8.0 support array processing, preprocessing, statistics, and evaluation in `src/data/`, `src/utils/metrics.py`, and `scripts/make_uad_smd.py`.
-- TS-TCC is vendored under `src/ts_tcc/` and reused from `src/pipeline.py` through `src.ts_tcc.trainer.trainer.TSTrainer`.
-- The main pipeline supports four families in `src/pipeline.py`: `default_nasade`, `omni_anomaly`, `usad`, and `tranad`.
+- PyTorch 2.11.0 - neural network models, training loops, checkpointing, and dataloaders in `src/pipeline.py`, `src/models/*.py`, `src/families/*.py`, `src/adaptnas/*.py`, and `src/ts_tcc/`
+- NumPy 2.4.3 - array transforms, `.npz` protocol handling, and window construction in `src/data/*.py` and `scripts/*.py`
+- scikit-learn 1.8.0 - metrics, normalization, and domain-shift scoring in `src/utils/metrics.py`, `src/data/swat.py`, and `scripts/make_uad_smd.py`
+- Vendored TS-TCC implementation - self-supervised pretraining stack in `src/ts_tcc/`, integrated through `src.ts_tcc.trainer.trainer.TSTrainer`
 
 **Testing:**
-- Not detected. No `pytest`, `unittest` suite, or dedicated test-runner config is present at the repo root or under `src/`.
+- Not detected
 
 **Build/Dev:**
-- `argparse` is the common CLI layer for `src/pipeline.py`, `src/ts_tcc/main.py`, and the scripts in `scripts/`.
-- `matplotlib` 3.10.8 drives figure generation in `src/utils/visualization.py` and `scripts/export_figures.py`.
-- `setuptools` is the only first-party packaging layer in `setup.py`.
+- `setuptools` - package metadata and install surface in `setup.py`
+- PowerShell and Bash wrappers - reproducible local runs via `run.ps1` and `scripts/run_pipeline.sh`
+- Python orchestration scripts - benchmark runners in `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`, and `scripts/run_usad_upstream_swat.py`
+- Matplotlib 3.10.8 - offline plots and saved figures in `src/utils/visualization.py` and `scripts/export_figures.py`
 
 ## Key Dependencies
 
 **Critical:**
-- `torch==2.11.0` in `requirements.txt` powers training, scoring, checkpointing, and device selection across `src/pipeline.py` and `src/families/`.
-- `numpy==2.4.3` in `requirements.txt` is the dominant data interchange type for `.npz` datasets, raw-window transforms, and metric inputs across `src/` and `scripts/`.
-- `scikit-learn==1.8.0` in `requirements.txt` is required by `src/utils/metrics.py`, `src/data/swat.py`, and `scripts/make_uad_smd.py`.
-- `pandas==3.0.1` in `requirements.txt` is required for raw SMD and SWaT ingestion in `src/data/omni_smd.py` and `src/data/swat.py`.
-- `einops==0.8.1` in `requirements.txt` is required by TS-TCC attention modules in `src/ts_tcc/models/attention.py`.
+- `torch==2.11.0` - every model family and training path depends on it; see `src/pipeline.py`, `src/families/omni_anomaly.py`, `src/families/usad.py`, `src/families/tranad.py`, and `src/models/deepsvdd.py`
+- `numpy==2.4.3` - primary numeric container for raw series, windows, labels, and saved `.npz` artifacts in `src/data/omni_smd.py`, `src/data/swat.py`, `src/data/tranad_smd.py`, and `scripts/preprocess_smd.py`
+- `scikit-learn==1.8.0` - anomaly metrics and preprocessing helpers in `src/utils/metrics.py`, `src/data/swat.py`, and `scripts/make_uad_smd.py`
+- `pandas==3.0.1` - CSV and TXT ingestion for SWaT and SMD in `src/data/swat.py`, `src/data/omni_smd.py`, and `scripts/preprocess_smd.py`
+- `scipy==1.17.1` - POT/SPOT threshold modeling through `scipy.stats.genpareto` in `src/families/omni_spot.py`
+- `einops==0.8.1` - tensor reshaping for TS-TCC attention blocks in `src/ts_tcc/models/attention.py`
 
 **Infrastructure:**
-- `matplotlib==3.10.8` in `requirements.txt` backs local plotting and saved figures in `outputs/figures/`.
-- `joblib==1.5.3`, `pillow==12.1.1`, and `python-dateutil==2.9.0.post0` are pinned in `requirements.txt` and appear in `pip_list.txt` as environment support packages.
-- `scripts/preprocess_sleepedf.py` requires `mne`, which is not declared in `requirements.txt`.
-- `src/ts_tcc/README.md` documents additional TS-TCC-side preprocessing dependencies such as `openpyxl`, `mne==0.20.7`, and `mat4py`.
-- Vendored upstream baselines bring their own dependency stacks through `external/OmniAnomaly/requirements.txt` and `external/tranad_upstream/requirements.txt`.
+- `matplotlib==3.10.8` - plot generation in `src/utils/visualization.py` and `scripts/export_figures.py`
+- `torchvision==0.26.0` - installed by `requirements.txt`; not directly imported by the current pipeline, but provisioned alongside PyTorch in the repo environment
+- Optional `mne` - used only for Sleep-EDF preprocessing in `scripts/preprocess_sleepedf.py` and `src/ts_tcc/data_preprocessing/sleep-edf/preprocess_sleep_edf.py`; not pinned in `requirements.txt`
+- Bundled upstream USAD code - local benchmark-only import surface in `external/usad_upstream/` and `scripts/run_usad_upstream_swat.py`
 
 ## Configuration
 
 **Environment:**
-- Configuration is CLI-first. The canonical argument surface is in `src/pipeline.py`, and `run.ps1` mirrors the most common options for Windows usage.
-- No root `.env*` file is present. Runtime configuration is path-driven and flag-driven rather than secret-driven.
-- The only environment variable written by first-party Python code is `PYTHONHASHSEED` in `src/pipeline.py` for determinism.
-- `scripts/run_pipeline.sh` exports `CUDA_VISIBLE_DEVICES` for local GPU selection.
-- `run.ps1` exposes `default_nasade`, `omni_anomaly`, and `usad`, while `src/pipeline.py` additionally supports `tranad`.
+- Main experiment configuration is CLI-driven through `src/pipeline.py`; wrappers `run.ps1` and `scripts/run_pipeline.sh` assemble mode, family, data paths, and hyperparameters rather than loading YAML or TOML config files
+- Dataset defaults are hard-coded in code paths: raw SMD under `data/ServerMachineDataset` in `src/pipeline.py`, raw SWaT under `data/SWaT` in `src/pipeline.py`, and generated `.npz` windows under `data/smd` and `data/smd_experiments` in `scripts/preprocess_smd.py` and `scripts/build_domain_shift_smd.py`
+- Upstream TS-TCC keeps Python config modules in `src/ts_tcc/config_files/*.py`
+- No repo-local skills were detected under `.codex/skills/` or `.agents/skills/`
+- No `.env` files were detected at repo root during this scan
 
 **Build:**
-- `requirements.txt` and `setup.py` are the only first-party dependency manifests.
-- `pip_list.txt` is an environment snapshot, not an installable lockfile.
-- No `pyproject.toml`, `tox.ini`, `noxfile.py`, Dockerfile, or CI workflow configuration exists at the repo root.
+- Dependency manifest: `requirements.txt`
+- Package metadata: `setup.py`
+- Windows runner: `run.ps1`
+- POSIX runner: `scripts/run_pipeline.sh`
+- No `pyproject.toml`, no lockfile, and no container build files were detected
 
 ## Platform Requirements
 
 **Development:**
-- Windows is the primary platform because `run.ps1` assumes `venv/Scripts/python.exe`.
-- Unix-like shells are partially supported through `scripts/run_pipeline.sh`.
-- NVIDIA GPU support is optional and depends on a CUDA-capable PyTorch install as described in `README.md`.
-- Meaningful runs require large local datasets under `data/`, especially `data/ServerMachineDataset`, `data/smd`, `data/smd_experiments`, and `data/SWaT`.
-- Local benchmark comparisons also depend on vendored upstream code in `external/OmniAnomaly`, `external/tranad_upstream`, and `external/usad_upstream`.
+- Windows-first local workflow with `run.ps1` and the checked-in `venv\Scripts\python.exe`
+- POSIX shell support is also present via `scripts/run_pipeline.sh`
+- Optional NVIDIA GPU acceleration is supported through PyTorch CUDA detection in `run.ps1` and `src/pipeline.py`
+- Local dataset directories must exist on disk for the chosen workflow: `data/ServerMachineDataset`, `data/SWaT`, `data/smd`, and `data/smd_experiments`
+- Checked-in environment artifacts under `external\miniconda3`, `external\conda-envs\omni36`, and `external\Miniconda3-latest-Windows-x86_64.exe` exist in the repo, but the main execution path uses the project `venv`
 
 **Production:**
-- Not a deployed service. The repo is structured for offline research runs, preprocessing jobs, and benchmark generation that write artifacts to `outputs/`, `results/`, and `data/`.
+- No deployed service target was detected
+- The repo operates as a local research and benchmarking pipeline that writes artifacts to `outputs/` and generated dataset folders under `data/`
 
 ---
 
-*Stack analysis: 2026-04-27*
+*Stack analysis: 2026-05-10*

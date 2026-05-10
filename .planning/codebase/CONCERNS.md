@@ -1,160 +1,170 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-04-27
-
-Confirmed concerns come from direct inspection of `src/`, `scripts/`, root entrypoints, packaging metadata, and current repository state. Inferred concerns are marked explicitly where the failure mode is strong but not reproduced end-to-end in this pass.
+**Analysis Date:** 2026-05-10
 
 ## Tech Debt
 
-**Repository hygiene and artifact sprawl [Confirmed]:**
-- Issue: generated artifacts and benchmark data live in the main repo surface, and several of them are tracked. `git status --short` currently shows modified generated files such as `outputs/results.json`, `outputs/figures/train_curve_loss.png`, `outputs/checkpoints/Base_CNN_GRU_final_best.pt`, `results/saved_models/ckp_last.pt`, and `data/smd_experiments/manifest.json`. `git ls-files` also shows tracked datasets and outputs under `data/ServerMachineDataset/`, `data/smd/`, `data/smd_experiments/`, `outputs/benchmarks/`, and `outputs/checkpoints/`.
-- Files: `.gitignore`, `data/`, `outputs/`, `results/`, `docs/`, `docs.rar`
-- Impact: review noise, frequent dirty worktrees after experiments, accidental publication of datasets/results, and weak provenance because reruns overwrite tracked artifacts.
-- Fix approach: move datasets and run artifacts outside the repo or ignore them aggressively; keep only manifests, lightweight fixtures, and curated reference outputs under version control.
+**Monolithic orchestration and runner drift:**
+- Issue: `src/pipeline.py` owns CLI parsing, dataset loading, TS-TCC pretraining, NAS search, family dispatch, metric calculation, and artifact writes. `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_pipeline.sh`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`, and `scripts/run_tranad_upstream_smd.py` each mirror part of that contract with separate defaults.
+- Files: `src/pipeline.py`, `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_pipeline.sh`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_upstream_smd.py`
+- Impact: feature support, defaults, and output handling drift across entrypoints, and even small behavioral changes require multi-file edits.
+- Fix approach: split family-specific run logic into importable modules and keep shell or helper scripts as thin pass-through wrappers over one canonical CLI.
 
-**Monolithic orchestration and wrapper drift [Confirmed]:**
-- Issue: `src/pipeline.py` is 2219 lines and mixes CLI parsing, TS-TCC pretraining, default NAS-ADE search, raw-family adapters, metric calculation, and file output. Behavior is then partially reimplemented in `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_pipeline.sh`, `scripts/run_tranad_smd.py`, and `scripts/run_usad_swat.py`. Documentation has also drifted: `README.md` documents `default_nasade`, `omni_anomaly`, and `usad`, but not `tranad`, even though `src/pipeline.py` supports it.
-- Files: `src/pipeline.py`, `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_pipeline.sh`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`, `README.md`
-- Impact: feature additions require touching multiple shells and runners, and supported families/options can silently differ by entrypoint.
-- Fix approach: split orchestration into reusable runner modules, keep one canonical CLI schema, and generate shell wrappers from that schema instead of hand-maintaining them.
+**Packaging and dependency contract drift:**
+- Issue: `setup.py` advertises `find_packages(where="src")`, `python_requires=">=3.8"`, a placeholder author string, and a looser dependency set than `requirements.txt`, while runtime commands import `src.*` and execute `python -m src.pipeline`.
+- Files: `setup.py`, `requirements.txt`, `README.md`, `src/__init__.py`, `src/pipeline.py`
+- Impact: packaged installs, editable installs, and repo-root execution do not share one reliable environment contract.
+- Fix approach: choose one supported packaging model, publish one authoritative dependency lock, and add an install smoke test for `python -m src.pipeline`.
 
-**Broken packaging/install contract [Confirmed]:**
-- Issue: runtime code imports `src.*` and `src.ts_tcc.*`, but `setup.py` declares `packages=find_packages(where="src")`. Running `find_packages(where='src')` in the project venv returns `['adaptnas', 'data', 'families', 'models', 'utils']`, which omits both the `src` namespace and the `ts_tcc` subtree.
-- Files: `setup.py`, `src/__init__.py`, `src/pipeline.py`, `src/ts_tcc/`
-- Impact: `pip install .` does not reproduce the import layout that `python -m src.pipeline` expects, so packaged use outside the repo root is brittle or broken.
-- Fix approach: adopt a consistent package layout with a real `src` package or a standard `src/` packaging pattern, then add an install smoke test that imports the supported entrypoints.
+**Tracked generated artifacts in the source repo:**
+- Issue: `.gitignore` ignores `external/` and `data/`, but tracked files still include `outputs/results.json`, `outputs/baselines/*.json`, `outputs/checkpoints/*.pt`, `outputs/logs/*.txt`, `outputs/benchmarks/**/*.json`, `results/saved_models/ckp_last.pt`, and `src/ts_tcc/data_preprocessing/epilepsy/data_files/data.csv`.
+- Files: `.gitignore`, `outputs/`, `results/saved_models/ckp_last.pt`, `src/ts_tcc/data_preprocessing/epilepsy/data_files/data.csv`
+- Impact: the repo accumulates noisy diffs, heavyweight artifacts, and ambiguous experiment provenance because generated state sits beside source code.
+- Fix approach: keep only curated fixtures and manifests in git; move checkpoints, logs, and benchmark outputs to ignored run directories.
 
 ## Known Bugs
 
-**PowerShell wrapper rejects a supported family [Confirmed]:**
-- Symptoms: `run.ps1` rejects `tranad`, even though `src/pipeline.py` accepts `--family tranad` and `scripts/run_tranad_smd.py` depends on it.
-- Files: `run.ps1`, `src/pipeline.py`, `scripts/run_tranad_smd.py`
-- Trigger: running `run.ps1 -Family tranad ...`.
+**PowerShell entrypoint blocks a supported family:**
+- Symptoms: `run.ps1` rejects `tranad` because its `ValidateSet` allows only `default_nasade`, `omni_anomaly`, and `usad`, while `src/pipeline.py` accepts `--family tranad`.
+- Files: `run.ps1`, `src/pipeline.py`
+- Trigger: running `.\run.ps1 -Mode uad_source -Family tranad ...`.
 - Workaround: call `python -m src.pipeline --family tranad ...` or `scripts/run_tranad_smd.py` directly.
 
-**Sleep-EDF preprocessing writes fake labels [Confirmed]:**
-- Symptoms: the preprocessing script writes all-zero `y` arrays for both source and target outputs.
+**Sleep-EDF preprocessing writes fake labels:**
+- Symptoms: the script saves all-zero `y` arrays for both source and target outputs.
 - Files: `scripts/preprocess_sleepedf.py`
 - Trigger: running `python scripts/preprocess_sleepedf.py`.
-- Workaround: avoid using the generated `data/sleepedf/source.npz` and `data/sleepedf/target.npz` until real labels are implemented.
+- Workaround: do not use the generated `.npz` outputs for supervised or evaluated flows.
 
-**Shared `outputs/results.json` creates cross-run race risk [Confirmed]:**
-- Symptoms: all families write the same `outputs/results.json`, and batch wrappers immediately read that file as an implicit handoff.
-- Files: `src/pipeline.py`, `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`
-- Trigger: running experiments in parallel, rerunning after failure, or inspecting results after another job completed.
-- Workaround: run jobs strictly serially and copy outputs to per-run paths immediately after each invocation.
+**USAD upstream helper points at a different default CSV contract:**
+- Symptoms: `scripts/run_usad_upstream_swat.py` defaults to `data/SWaT/normal.csv` and `data/SWaT/attack.csv`, while `run.ps1` and `README.md` use `data/SWaT/SWaT_Dataset_Normal_v1.csv` and `data/SWaT/SWaT_Dataset_Attack_v0.csv`.
+- Files: `scripts/run_usad_upstream_swat.py`, `run.ps1`, `README.md`
+- Trigger: running `python scripts/run_usad_upstream_swat.py` without explicit `--train_csv` and `--test_csv`.
+- Workaround: pass the intended SWaT CSV paths explicitly.
 
 ## Security Considerations
 
-**Unsafe local deserialization surfaces [Confirmed]:**
-- Risk: `.npz` loading uses `allow_pickle=True`, and the TS-TCC path loads `.pt` files with `torch.load()`. Both trust workspace contents as executable data boundaries.
+**Unsafe local deserialization surfaces:**
+- Risk: `np.load(..., allow_pickle=True)` accepts pickled objects from workspace files, and TS-TCC loaders use `torch.load` on `.pt` datasets and checkpoints.
 - Files: `src/pipeline.py`, `scripts/make_uad_smd.py`, `src/ts_tcc/main.py`, `src/ts_tcc/dataloader/dataloader.py`
-- Current mitigation: none detected beyond local-path assumptions.
-- Recommendations: remove `allow_pickle=True` where object arrays are unnecessary, document checkpoint trust boundaries, and treat `.pt` and pickled `.npz` files as privileged inputs.
+- Current mitigation: inputs are treated as trusted local files; no validation boundary is enforced in code.
+- Recommendations: remove `allow_pickle=True` where object arrays are unnecessary, prefer safer formats, and treat `.pt` and pickled `.npz` files as privileged inputs.
 
-**Dynamic import via `exec` [Confirmed]:**
-- Risk: TS-TCC config selection imports modules with `exec(...)` based on runtime strings.
+**Dynamic code execution for config selection:**
+- Risk: `src/ts_tcc/main.py` imports configs through `exec(...)` using the CLI-selected dataset name.
 - Files: `src/ts_tcc/main.py`
-- Current mitigation: dataset names are expected to be local and known.
-- Recommendations: replace `exec` with an explicit module map and normal imports.
-
-**Tracked datasets and benchmark artifacts raise redistribution/privacy risk [Inferred]:**
-- Risk: raw datasets and generated benchmark outputs are stored directly under the repo tree, including `data/ServerMachineDataset/`, `data/SWaT/`, `data/smd_experiments/`, `outputs/logs/`, and `outputs/benchmarks/`.
-- Files: `data/`, `outputs/`, `.gitignore`, `README.md`
-- Current mitigation: no licensing/privacy boundary is enforced in repository automation.
-- Recommendations: move raw datasets to external storage, keep only manifests/checksums in git, and document which artifacts are safe to share.
+- Current mitigation: none beyond the expectation that callers pass known dataset names.
+- Recommendations: replace `exec` with an explicit mapping of dataset names to config modules.
 
 ## Performance Bottlenecks
 
-**Candidate evaluation repeats expensive full-fit loops [Confirmed]:**
-- Problem: each default NAS-ADE candidate redoes warmup, feature extraction, SVDD fitting, target weighting, bilevel training, and final evaluation. The raw-family adapters also retrain full Omni/USAD/TranAD models per candidate.
+**Search paths retrain many models per run:**
+- Problem: search loops run `N_ITERS` times and retrain `args.search_candidates` models per iteration, then combined mode reruns final-only baselines for `Base_CNN_GRU`, `Base_CNN_TCN`, `Base_CNN_TRF`, and `NAS_BestArch`.
 - Files: `src/pipeline.py`, `src/adaptnas/trainer.py`, `src/adaptnas/optimizer.py`, `src/families/omni_anomaly.py`, `src/families/usad.py`, `src/families/tranad.py`
-- Cause: search is implemented as repeated end-to-end training with little checkpoint reuse or intermediate caching.
-- Improvement path: cache reusable feature banks/checkpoints, split cheap ranking from full retraining, and add resumable search state.
+- Cause: candidate ranking relies on repeated warmup, feature extraction, SVDD fitting, bilevel training, and final rescoring with little reuse of intermediate state.
+- Improvement path: cache reusable feature banks and checkpoints, prune candidates early, and persist resumable search state.
 
-**Memory amplification in dataset and window construction [Confirmed]:**
-- Problem: `ArrayDataset` eagerly copies full arrays into tensors, `build_validation()` restacks subsets into new arrays, and `build_tranad_windows()` allocates one padded history window per timestep. The same repo also stores large raw files under `data/`, which increases local I/O and memory pressure during experiments.
-- Files: `src/data/datasets.py`, `src/pipeline.py`, `src/data/tranad_smd.py`, `src/data/omni_smd.py`, `src/data/swat.py`, `data/`
-- Cause: preprocessing and loaders favor full materialization over streaming, memmap, or on-the-fly slicing.
-- Improvement path: move to lazy datasets, memory-mapped arrays, and batched sliding-window generation.
+**Memory amplification from eager array and tensor materialization:**
+- Problem: arrays are repeatedly copied through `fix_length()`, `load_all_smd_for_pretrain()`, `build_validation()`, `ArrayDataset`, and `build_tranad_windows()`.
+- Files: `src/pipeline.py`, `src/data/datasets.py`, `src/data/tranad_smd.py`, `src/data/omni_smd.py`, `src/data/swat.py`
+- Cause: loaders and preprocessing favor full in-memory `np.concatenate`, `np.stack`, and `torch.tensor(...)` copies instead of lazy slicing or memory mapping.
+- Improvement path: use lazy datasets, generator-based windowing, and shared-memory views where possible.
+
+**TranAD runs double-precision end to end:**
+- Problem: TranAD windows are built as `np.float64`, converted to `torch.double`, and the model is forced to `.double()`.
+- Files: `src/data/tranad_smd.py`, `src/families/tranad.py`, `scripts/run_tranad_upstream_smd.py`
+- Cause: the implementation mirrors upstream numeric types instead of using a project-wide `float32` path.
+- Improvement path: validate a `float32` path and keep double precision only if a benchmark requires it.
 
 ## Fragile Areas
 
-**Benchmark generation is label-informed and warning-driven [Confirmed]:**
-- Files: `scripts/build_domain_shift_smd.py`, `scripts/make_uad_smd.py`, `data/smd_experiments/manifest.json`
-- Why fragile: cross-machine target ranking uses anomaly counts and `domain_auc` before the benchmark is frozen, `search_best_split()` enforces anomaly-count constraints using target labels, `build_domain_shift_smd.py` hardcodes `strict=False`, and batch generation catches exceptions with warning-only logging. Manifest creation can therefore bias toward easier targets and still succeed with partial outputs.
-- Safe modification: separate benchmark curation from evaluation labels, default batch builds to fail-fast mode, and emit a structured failure report when any case is skipped.
-- Test coverage: no regression tests detected for split search, manifest stability, or batch-builder failure handling.
+**Label-informed benchmark construction and partial manifests:**
+- Files: `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`
+- Why fragile: `search_best_split()` ranks target splits using hidden target labels, anomaly-count thresholds, and `domain_auc`, then writes hidden anomaly counts into metadata. `scripts/build_domain_shift_smd.py` builds with `strict=False`, catches exceptions, prints warnings, and still writes a manifest.
+- Safe modification: separate dataset curation from hidden labels, fail the batch when any split is invalid, or mark partial manifests as incomplete in machine-readable metadata.
+- Test coverage: no project-local regression tests cover split selection, manifest completeness, or target-ranking behavior.
 
-**TS-TCC snapshot carries independent execution semantics [Confirmed]:**
+**TS-TCC subtree has independent execution semantics:**
 - Files: `src/ts_tcc/main.py`, `src/ts_tcc/dataloader/dataloader.py`, `src/ts_tcc/trainer/trainer.py`, `src/pipeline.py`
-- Why fragile: this subtree has its own CLI, dynamic config import, checkpoint loading path, expected `train.pt`/`val.pt`/`test.pt` layout, and its own reproducibility settings. It also sets `torch.backends.cudnn.deterministic = False`, which conflicts with the top-level pipeline's deterministic setup in `src/pipeline.py`.
-- Safe modification: isolate TS-TCC behind a narrow adapter layer with explicit input/output contracts, then pin and test that boundary separately.
-- Test coverage: no project-local tests detected for the adapter boundary.
+- Why fragile: the vendored subtree has its own CLI, its own checkpoint and dataset layout, dynamic imports, `torch.load`ed datasets, and a different reproducibility setting (`torch.backends.cudnn.deterministic = False`) than the top-level pipeline.
+- Safe modification: isolate TS-TCC behind a narrow adapter layer and test that boundary separately instead of mixing its conventions into `src/pipeline.py`.
+- Test coverage: no project-local adapter or parity tests are present.
 
-**Legacy preprocessing utilities are unfinished and warning-prone [Confirmed]:**
-- Files: `scripts/preprocess_sleepedf.py`, `src/ts_tcc/data_preprocessing/sleep-edf/dhedfreader.py`, `src/ts_tcc/data_preprocessing/sleep-edf/generate_train_val_test.py`
-- Why fragile: `scripts/preprocess_sleepedf.py` still contains placeholder labels, and `python -m compileall src scripts` emits `SyntaxWarning` messages from `dhedfreader.py` about invalid escape sequences. These paths also depend on dataset-specific assumptions that are not covered by the main pipeline.
-- Safe modification: quarantine legacy preprocessing behind explicit "experimental" boundaries, fix parser warnings, and add smoke tests for generated file formats before reusing them.
-- Test coverage: none detected.
+**Shared artifact handoff contract:**
+- Files: `src/pipeline.py`, `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`
+- Why fragile: all major entrypoints write or read the same `outputs/results.json`, and training also writes shared `outputs/figures` and `outputs/checkpoints` paths.
+- Safe modification: require a run ID or output directory argument for every invocation and aggregate results from immutable per-run files.
+- Test coverage: no tests enforce artifact isolation or parallel-safe runs.
+
+**Repo-local environment assumptions:**
+- Files: `run.ps1`, `README.md`, `scripts/run_all_smd.py`, `scripts/run_usad_swat.py`, `scripts/run_tranad_smd.py`
+- Why fragile: the primary Windows wrapper hardcodes `.\venv\Scripts\python.exe`, default dataset roots under `data/`, and relative output folders, while helper scripts assume they are launched from the repo checkout.
+- Safe modification: derive the interpreter from `sys.executable` or an environment variable, and require explicit data and output roots for automation.
+- Test coverage: no smoke tests validate entrypoints outside one local workstation layout.
 
 ## Scaling Limits
 
-**Workspace-local execution model [Confirmed]:**
-- Current capacity: one local machine, one local Python environment, shared `outputs/` handoff files, and sequential subprocess loops in the batch runners.
-- Limit: as the number of cases grows under `data/smd_experiments/` and `outputs/benchmarks/`, shared filenames such as `outputs/results.json` and global figure/checkpoint names become collision-prone, and batch throughput is capped by serial execution.
-- Scaling path: run each case in an isolated run directory with immutable artifact paths, then aggregate results from manifests instead of shared globals.
+**Single-workspace artifact namespace:**
+- Current capacity: one local workspace writes into one shared `outputs/` tree and uses serial subprocess loops to sweep cases.
+- Limit: concurrent runs clobber shared JSON, checkpoints, and figures, while long sweeps serialize behind one results namespace.
+- Scaling path: isolate each run under a unique output root and add an aggregation pass that merges finished run manifests.
 
-**Repo-embedded datasets and vendored runtimes [Confirmed]:**
-- Current capacity: the repo already includes local datasets/results plus vendored runtime trees such as `external/conda-envs/`, `external/miniconda3/`, `external/OmniAnomaly/`, `external/tranad_upstream/`, and `external/usad_upstream/`.
-- Limit: checkout size, storage cost, onboarding friction, and CI/container reproducibility all degrade as the repo accumulates binary state.
-- Scaling path: replace vendored runtimes with reproducible environment specs, fetch upstream repos explicitly, and keep datasets outside the source repo.
+**RAM-bound preprocessing and search:**
+- Current capacity: datasets fit only while the workspace can afford multiple in-memory copies across `numpy` and `torch`.
+- Limit: larger SMD-style collections or longer windows hit memory ceilings before compute is saturated.
+- Scaling path: introduce streaming or memory-mapped datasets, chunked feature extraction, and on-disk caches for reusable intermediate features.
 
 ## Dependencies at Risk
 
-**Locally vendored upstream snapshots [Confirmed]:**
-- Risk: family behavior depends on copied upstream code and local runtime trees rather than a small reproducible dependency graph.
-- Impact: upstream fixes are hard to absorb, local results can depend on undeclared environment drift, and security updates are easy to miss.
-- Files: `external/OmniAnomaly/`, `external/tranad_upstream/`, `external/usad_upstream/`, `external/miniconda3/`, `external/conda-envs/`
-- Migration plan: replace copied repos with pinned submodules or extracted adapters, and replace vendored runtimes with environment lockfiles plus documented install steps.
+**Divergent Python dependency declarations:**
+- Risk: `requirements.txt` pins one environment while `setup.py` declares a looser, shorter dependency set and an older Python floor.
+- Impact: editable installs, packaged installs, and README-based environment setup can resolve different libraries.
+- Files: `requirements.txt`, `setup.py`, `README.md`
+- Migration plan: keep one locked environment spec and generate secondary install metadata from it.
+
+**Vendored upstream TS-TCC snapshot:**
+- Risk: `src/ts_tcc/` is a copied upstream subtree with its own docs, loaders, preprocessing scripts, and runtime assumptions, but no explicit sync mechanism.
+- Impact: upstream fixes, security patches, and behavior changes are easy to miss or merge incorrectly.
+- Files: `src/ts_tcc/README.md`, `src/ts_tcc/main.py`, `src/ts_tcc/dataloader/dataloader.py`, `src/ts_tcc/trainer/trainer.py`
+- Migration plan: track the upstream source explicitly via subtree or submodule, or extract a stable local adapter with a documented upgrade path.
 
 ## Missing Critical Features
 
-**No isolated run manifest / run ID contract [Confirmed]:**
-- Problem: results, plots, checkpoints, and summaries are keyed by shared filenames instead of immutable run IDs.
-- Blocks: safe parallel benchmarking, exact reruns, and post-hoc provenance audits.
-- Files: `src/pipeline.py`, `src/adaptnas/trainer.py`, `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`
+**No run-scoped artifact contract:**
+- Problem: the codebase has no required `--out_dir` or run-id contract for the main pipeline, so experiments default to shared filenames and directories.
+- Blocks: safe parallel benchmarking, reliable provenance, and restartable long-running sweeps.
+- Files: `src/pipeline.py`, `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`
 
-**No CI or project-local automated test suite for core flows [Confirmed]:**
-- Problem: no dedicated project tests were detected under `src/`, `scripts/`, or `tests/`, and no `.github/workflows/` directory is present. The only project file that matches a test-like naming pattern is `src/ts_tcc/data_preprocessing/sleep-edf/generate_train_val_test.py`, which is a preprocessing script rather than a test.
-- Blocks: safe refactoring of search logic, wrapper defaults, preprocessing, and security-sensitive loaders.
-- Files: `src/`, `scripts/`, `tests/`, `.github/`
+**No project-local automated test suite or CI pipeline:**
+- Problem: no project-local test files or workflow configuration are present under tracked source paths, and no `.github/` workflow directory exists in the tracked tree.
+- Blocks: safe refactoring of search logic, packaging, wrappers, and dataset builders.
+- Files: `src/`, `scripts/`, `setup.py`, `README.md`
 
-**No packaged-install smoke path [Confirmed]:**
-- Problem: there is no verification that the install metadata in `setup.py` can produce a working import surface for the documented entrypoints.
-- Blocks: reliable use outside the repo root, reproducible packaging, and any future CLI distribution.
-- Files: `setup.py`, `README.md`, `src/pipeline.py`
+**No portable bootstrap or install path:**
+- Problem: the documented and scripted flows depend on a repo-local `venv/` plus repo-relative data directories instead of a portable installer or environment bootstrap command.
+- Blocks: reproducible setup in CI, containers, and clean workstations.
+- Files: `run.ps1`, `README.md`, `requirements.txt`, `setup.py`
 
 ## Test Coverage Gaps
 
-**Pipeline orchestration, wrapper parity, and installability [Confirmed]:**
-- What's not tested: `--family` parity across `src/pipeline.py`, `run.ps1`, `scripts/run_all_smd.py`, and `scripts/run_pipeline.sh`; artifact naming collisions; and package-install smoke imports.
-- Files: `src/pipeline.py`, `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_pipeline.sh`, `setup.py`
-- Risk: supported families can diverge by entrypoint, and packaged use can break without any automated signal.
+**Pipeline orchestration and wrapper parity:**
+- What's not tested: argument parity across `src/pipeline.py`, `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, and `scripts/run_usad_swat.py`, plus artifact-path collisions.
+- Files: `src/pipeline.py`, `run.ps1`, `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`
+- Risk: supported families and defaults drift silently, and concurrent runs overwrite each other.
 - Priority: High
 
-**Dataset split generation and benchmark ranking [Confirmed]:**
-- What's not tested: `create_dataset()`, `search_best_split()`, cross-machine target ranking, and manifest completeness when some cases fail.
+**Dataset builders and benchmark curation:**
+- What's not tested: `search_best_split()`, `create_dataset()`, cross-machine target ranking, and manifest completeness when some cases fail.
 - Files: `scripts/make_uad_smd.py`, `scripts/build_domain_shift_smd.py`
-- Risk: label-informed selection bias, partial manifests, or invalid split metadata can slip into published experiments unnoticed.
+- Risk: label-informed selection bias and partial datasets can slip into experiments without an automated signal.
 - Priority: High
 
-**Family adapters, reproducibility settings, and unsafe loaders [Confirmed]:**
-- What's not tested: Omni/USAD/TranAD entrypoint parity, TS-TCC determinism, safe `.pt`/`.npz` loading boundaries, and legacy preprocessing scripts.
-- Files: `src/families/omni_anomaly.py`, `src/families/usad.py`, `src/families/tranad.py`, `src/ts_tcc/main.py`, `src/ts_tcc/dataloader/dataloader.py`, `scripts/preprocess_sleepedf.py`
-- Risk: the same benchmark launched through different entrypoints can produce materially different behavior, and unsafe input assumptions remain unguarded.
+**TS-TCC adapter boundary and unsafe loader assumptions:**
+- What's not tested: TS-TCC import and adapter compatibility, deterministic behavior, `.pt` and pickled `.npz` trust boundaries, and legacy preprocessing outputs such as `scripts/preprocess_sleepedf.py`.
+- Files: `src/ts_tcc/main.py`, `src/ts_tcc/dataloader/dataloader.py`, `src/pipeline.py`, `scripts/preprocess_sleepedf.py`, `scripts/make_uad_smd.py`
+- Risk: data-loading security assumptions, reproducibility, and integration correctness regress without notice.
 - Priority: Medium
 
 ---
 
-*Concerns audit: 2026-04-27*
+*Concerns audit: 2026-05-10*

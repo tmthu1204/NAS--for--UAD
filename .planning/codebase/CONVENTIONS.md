@@ -1,136 +1,116 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-04-27
+**Analysis Date:** 2026-05-10
 
 ## Naming Patterns
 
 **Files:**
-- Use `snake_case.py` for runtime modules and scripts: `src/pipeline.py`, `src/data/omni_smd.py`, `src/families/omni_anomaly.py`, `scripts/build_domain_shift_smd.py`.
-- Encode dataset, family, or protocol directly in the filename when the behavior is specialized: `src/data/tranad_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`.
-- Use `_upstream_` in script names only when the script wraps an external reference implementation instead of the repo-native family code: `scripts/run_tranad_upstream_smd.py`, `scripts/run_usad_upstream_swat.py`.
+- Use `snake_case.py` for first-party Python modules in `src/` and `scripts/`, for example `src/data/omni_smd.py`, `src/families/omni_anomaly.py`, and `scripts/make_uad_smd.py`.
+- Keep vendored `src/ts_tcc/` names in their upstream style, including mixed-case filenames such as `src/ts_tcc/config_files/HAR_Configs.py` and `src/ts_tcc/models/TC.py`.
+- Use `__init__.py` only to mark packages or re-export a small public surface, as in `src/families/__init__.py`.
 
 **Functions:**
-- Use `snake_case` for helpers, loaders, scorers, and training routines: `set_global_seed`, `compute_domain_shift_metrics`, `validate_omni_on_series`, `train_usad_source`, `build_dataset_arg`.
-- Use verb-first names for operational helpers in `scripts/`: `load_results_json`, `save_json`, `run_cmd`, `split_dirs`, `create_dataset`.
-- Keep the `get_fixed_paper_*` and `sample_*_arch` pair for family-specific fixed baselines and NAS sampling in `src/families/omni_anomaly.py`, `src/families/usad.py`, and `src/families/tranad.py`.
+- Use `snake_case` for helpers, loaders, and training routines, such as `set_global_seed` in `src/pipeline.py`, `load_raw_swat` in `src/data/swat.py`, and `train_bilevel` in `src/adaptnas/trainer.py`.
+- Prefix internal helpers with `_` when they are file-local, such as `_read_txt_matrix` in `src/data/omni_smd.py` and `_sanitize_json` in `scripts/run_usad_upstream_swat.py`.
+- Use a top-level `main()` for CLI scripts, then guard it with `if __name__ == "__main__":`, as in `src/pipeline.py`, `scripts/run_all_smd.py`, and `scripts/build_domain_shift_smd.py`.
 
 **Variables:**
-- Use short tensor and batch names inside training code: `xb`, `yb`, `xt`, `yt`, `d_s`, `d_t` in `src/adaptnas/trainer.py` and `src/adaptnas/optimizer.py`.
-- Use descriptive NumPy and dataset names at pipeline boundaries: `X_train_norm`, `X_target_pool`, `y_test_aligned`, `train_windows_full` in `src/pipeline.py` and `scripts/run_tranad_upstream_smd.py`.
-- Use uppercase module constants for directories and range tables: `ROOT`, `PROJ`, `LOGS`, `BENCHMARKS` in runner scripts and `SHIFT_RANGES` in `scripts/make_uad_smd.py`.
+- Use descriptive dataset and artifact names for pipeline state, such as `target_pool_unlabeled`, `valid_ratio`, `search_candidates`, and `metrics_uad` in `src/pipeline.py` and `scripts/run_all_smd.py`.
+- Use short tensor names only inside tight training loops, such as `xb`, `yb`, `xt`, and `yt_w` in `src/adaptnas/trainer.py`.
+- Public PowerShell parameters use `PascalCase` names such as `-Mode`, `-Family`, and `-DataDir` in `run.ps1`, even though Python flags remain `--snake_case`.
 
 **Types:**
-- Use `PascalCase` for models, datasets, and dataclasses: `CandidateModel`, `ArrayDataset`, `RawSWaTDataset`, `RawSMDMachine`, `UsadArchConfig`, `TranADArchConfig`, `OmniArchConfig`.
-- Newer code in `src/data/*.py` and `src/families/*.py` uses explicit type hints such as `str | Path`, `Tuple[np.ndarray, np.ndarray]`, and `Dict[str, float]`; match that style when editing those areas.
-- Older model code in `src/models/*.py` and parts of `src/adaptnas/*.py` is lightly typed or untyped. Preserve local style when making targeted fixes, but prefer the newer typed style for net-new code.
+- Use `PascalCase` for classes and dataclasses, such as `RawSMDMachine` in `src/data/omni_smd.py`, `RawSWaTDataset` in `src/data/swat.py`, and `UsadArchConfig` in `src/families/usad.py`.
+- When a module is in the newer first-party style, annotate return types and container types explicitly, as in `src/data/swat.py`, `src/families/tranad.py`, and `src/families/omni_spot.py`.
 
 ## Code Style
 
 **Formatting:**
-- No repo-level formatter configuration is detected. `pyproject.toml`, `setup.cfg`, `.flake8`, `.pylintrc`, `pytest.ini`, `tox.ini`, and `noxfile.py` are not present at the repository root.
-- Use 4-space indentation and mostly PEP 8 spacing. That pattern is consistent in `src/data/swat.py`, `src/data/omni_smd.py`, `src/families/usad.py`, and `scripts/build_domain_shift_smd.py`.
-- Formatting consistency drops in older files such as `src/data/datasets.py`, `src/models/transformer.py`, and `src/ts_tcc/utils.py`, where blank-line spacing and import grouping are looser.
-- JSON artifacts are written with `indent=2` and usually `ensure_ascii=False` in `src/pipeline.py`, `scripts/run_all_smd.py`, `scripts/compare_mode_benchmarks.py`, `scripts/run_tranad_upstream_smd.py`, and `scripts/run_usad_upstream_swat.py`.
+- No repo-level formatter config is detected. There is no `pyproject.toml`, `ruff.toml`, `setup.cfg`, `.flake8`, `.prettierrc`, or `eslint` config at the repo root.
+- Use 4-space indentation and standard Python spacing. This is consistent in `src/pipeline.py`, `src/data/omni_smd.py`, and `scripts/preprocess.py`.
+- Prefer triple-double-quoted module docstrings when a file needs context, as in `src/pipeline.py`, `scripts/preprocess.py`, and `src/families/usad.py`.
+- Preserve the file-local style instead of forcing a global cleanup. `src/data/` and `src/families/` use a newer, typed style with grouped imports and restrained blank lines, while `src/models/` and `src/ts_tcc/` are looser and more compact.
 
 **Linting:**
-- No enforced lint tool is detected.
-- Runtime validation and manual review act as the effective quality gate.
-- When adding new code, prefer the cleaner typed style already present in `src/data/*.py`, `src/families/*.py`, and the newer runner scripts, because no formatter will normalize it afterward.
+- No enforced lint runner is detected in the repo. `requirements.txt` contains runtime libraries only.
+- Inline suppression appears only where compatibility workarounds need it, such as `# type: ignore` and `# noqa` in `scripts/run_usad_upstream_swat.py`.
+- Keep new code warning-free without adding broad suppressions, because there is no project linter to police them later.
 
 ## Import Organization
 
 **Order:**
-1. Use `from __future__ import annotations` first when the module relies on modern Python type syntax, as in `src/data/swat.py`, `src/data/omni_smd.py`, and `src/families/*.py`.
-2. Import standard-library modules next: `argparse`, `json`, `math`, `os`, `random`, `sys`, `pathlib`.
-3. Import third-party modules after that: `numpy`, `torch`, `pandas`, `sklearn`.
-4. Import local modules last, typically from the `src.` package root.
+1. Standard library imports first, as in `src/pipeline.py` and `scripts/run_usad_upstream_swat.py`.
+2. Third-party libraries second, such as `numpy`, `pandas`, `torch`, and `sklearn` in `src/data/swat.py` and `src/families/usad.py`.
+3. Local package imports last, using either absolute `src.*` imports in top-level orchestrators or relative imports inside a package.
 
 **Path Aliases:**
-- No import alias system is configured.
-- Mainline code prefers explicit absolute imports rooted at `src`, for example in `src/pipeline.py`, `scripts/run_tranad_upstream_smd.py`, and `scripts/run_usad_upstream_swat.py`.
-- The `src/ts_tcc/*` subtree uses local script-style imports such as `from utils import _logger` in `src/ts_tcc/main.py`. Keep that style isolated to the TS-TCC subtree.
-- Standalone runner scripts sometimes mutate `sys.path` before importing local packages. That pattern appears in `scripts/build_domain_shift_smd.py`, `scripts/run_tranad_upstream_smd.py`, and `scripts/run_usad_upstream_swat.py`.
+- No custom import aliasing is configured.
+- Top-level entrypoints import via the package root, for example `from src.data.swat import RawSWaTDataset` in `src/pipeline.py`.
+- Package-internal modules prefer relative imports, for example `from .optimizer import AdaptNASOptimizer` in `src/adaptnas/trainer.py` and `from .omni_spot import SPOT` in `src/families/omni_eval.py`.
 
 ## Error Handling
 
 **Patterns:**
-- Validate inputs early and raise built-in exceptions with actionable messages. Common exceptions are `FileNotFoundError`, `ValueError`, `RuntimeError`, and `NotImplementedError` in `src/pipeline.py`, `src/data/swat.py`, `src/data/omni_smd.py`, `src/data/tranad_smd.py`, `scripts/preprocess_smd.py`, and `scripts/make_uad_smd.py`.
-- Prefer explicit shape and protocol checks over silent coercion. Examples include:
-  - `src/data/swat.py` rejects non-2-D series and invalid `window_length` or `stride`.
-  - `src/families/usad.py` rejects non-flattened window arrays.
-  - `src/pipeline.py` rejects missing labeled validation data for evaluation paths.
-- Use warning-and-continue behavior only for batch build or sweep scripts where one failed case should not abort the full run, as in `scripts/build_domain_shift_smd.py`, `scripts/run_all_smd.py`, and `scripts/make_uad_smd.py`.
-- Use `assert` only for low-level invariants inside model code or imported upstream utilities, such as `src/models/tscnn.py`, `src/ts_tcc/models/loss.py`, and `src/ts_tcc/models/attention.py`. For repo-owned public APIs, prefer explicit exceptions.
+- Validate file existence and shape assumptions up front, then raise specific exceptions. See `src/data/omni_smd.py`, `src/data/swat.py`, `scripts/preprocess_smd.py`, `scripts/preprocess.py`, and `src/families/usad.py`.
+- Use `ValueError` for bad arguments or invalid shapes, `FileNotFoundError` for missing inputs, and `RuntimeError` for impossible runtime states. This is the dominant pattern in `src/pipeline.py`, `src/families/omni_spot.py`, and `src/adaptnas/optimizer.py`.
+- Treat `assert` as a legacy or low-level invariant check only. It appears in `src/models/tscnn.py` and vendored `src/ts_tcc/` files, but newer first-party data and family modules prefer explicit exceptions.
+- Reserve broad `except Exception` blocks for optional environment compatibility or safe metric fallbacks, such as UTF-8 console reconfiguration in `src/pipeline.py`, AUROC fallback in `src/utils/metrics.py`, the optional `seaborn` stub in `scripts/run_usad_upstream_swat.py`, and GPD fitting fallback in `src/families/omni_spot.py`.
 
 ## Logging
 
-**Framework:** Mostly `print`; legacy TS-TCC code uses `logging`
+**Framework:** Mixed `print` and `logging`
 
 **Patterns:**
-- Use prefix-tagged console output for operational progress, for example `[INFO]`, `[WARN]`, `[OK]`, and `[FAIL]` in `src/pipeline.py`, `scripts/preprocess_smd.py`, `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, and `scripts/run_usad_swat.py`.
-- Batch runners redirect subprocess stdout and stderr to `outputs/logs/*.txt`. Those log files are the primary debugging artifacts for sweep failures in `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, and `scripts/run_usad_swat.py`.
-- `src/ts_tcc/utils.py` defines `_logger` for file-plus-console logging. That pattern is local to `src/ts_tcc/*` and is not reused by the main UAD pipeline.
+- Use plain `print` for first-party CLI progress, search summaries, and artifact locations. This is the dominant pattern in `src/pipeline.py`, `scripts/run_all_smd.py`, `scripts/preprocess_smd.py`, and `scripts/make_uad_smd.py`.
+- Use bracketed status prefixes when printing operational messages, such as `[INFO]`, `[WARN]`, `[FAIL]`, and `[OK]` in `src/pipeline.py`, `scripts/run_usad_swat.py`, and `scripts/build_domain_shift_smd.py`.
+- Keep `logging` scoped to the vendored TS-TCC subsystem. `src/ts_tcc/utils.py` builds a file+console logger, and `src/ts_tcc/main.py` passes it into `src/ts_tcc/trainer/trainer.py`.
+- Do not introduce a second logging abstraction for new first-party modules unless the entire caller chain already uses it. Match the surrounding file.
 
 ## Comments
 
 **When to Comment:**
-- Use module docstrings or block comments to explain protocol semantics, research assumptions, and tensor layout expectations. Good examples are `src/pipeline.py`, `src/families/usad.py`, `src/families/tranad.py`, and `src/families/omni_anomaly.py`.
-- Use short inline comments only for non-obvious behavior, such as layout conversions in `src/models/tscnn.py`, paper-fidelity notes in `src/families/usad.py`, and dataset-splitting rules in `scripts/make_uad_smd.py`.
-- Avoid comments that restate obvious tensor moves or assignments.
+- Comment paper alignment, data protocol, tensor shapes, and phase boundaries. Examples include the top-of-file overview in `src/pipeline.py`, architecture docstrings in `src/families/usad.py` and `src/families/tranad.py`, and shape notes in `src/models/tscnn.py`.
+- Keep comments short and local. First-party modules mostly avoid line-by-line commentary.
+- Keep new comments ASCII. A few copied comments in `src/utils/metrics.py`, `src/data/datasets.py`, and `src/adaptnas/search_space.py` show encoding artifacts and are not a style to repeat.
 
 **JSDoc/TSDoc:**
 - Not applicable.
-- Prefer Python docstrings for public helpers and family modules, following the style already used in `src/data/swat.py`, `src/data/omni_smd.py`, and `src/families/*.py`.
+- Python docstrings are selective rather than comprehensive. Add them to entrypoints, dataclasses, and non-obvious helpers, not every small tensor operation.
+
+## Validation and Reproducibility
+
+- Validate CLI inputs at the boundary. Python entrypoints rely on `argparse` defaults and `choices` in `src/pipeline.py`, `scripts/build_domain_shift_smd.py`, and `scripts/run_all_smd.py`, while `run.ps1` uses `ValidateSet` and explicit `throw`.
+- Validate data shapes, window lengths, and label alignment before model code runs. See `src/data/omni_smd.py`, `src/data/swat.py`, `scripts/preprocess.py`, and `scripts/preprocess_smd.py`.
+- Seed randomness explicitly for reproducibility. Use `set_global_seed` in `src/pipeline.py` and the matching helper in `scripts/run_tranad_upstream_smd.py`.
+- Preserve best model state with in-memory clones before reloading it. This pattern appears in `src/adaptnas/trainer.py`, `src/families/usad.py`, `src/families/tranad.py`, and `src/pipeline.py`.
+- Persist validation artifacts as JSON, NPZ, PT, and PNG outputs instead of transient console-only reporting. See `src/pipeline.py`, `scripts/run_all_smd.py`, `scripts/make_uad_smd.py`, and `src/ts_tcc/trainer/trainer.py`.
 
 ## Function Design
 
 **Size:**
-- Large orchestration functions are accepted for CLI entrypoints. `src/pipeline.py` and `scripts/run_all_smd.py` centralize parsing, dispatch, training, evaluation, and artifact writing.
-- Reusable logic is factored into smaller helpers around those entrypoints, especially in `src/data/*.py`, `src/families/*.py`, and `scripts/make_uad_smd.py`.
+- Keep low-level helpers small and single-purpose, as in `src/utils/schedulers.py`, `src/data/omni_smd.py`, and `src/data/swat.py`.
+- Accept that orchestration files are large. `src/pipeline.py` centralizes end-to-end family flows instead of delegating each branch into a separate service layer.
+- When adding new logic to a large file, prefer a new helper function near the call site instead of expanding an already large branch inline.
 
 **Parameters:**
-- Use explicit parameters rather than opaque config dictionaries for reusable helpers: `compute_domain_shift_metrics` in `scripts/make_uad_smd.py`, `train_usad_source` in `src/families/usad.py`, and `validate_tranad_on_windows` in `src/families/tranad.py`.
-- Use dataclasses for stable architecture/config bundles: `ArchConfig` in `src/adaptnas/search_space.py` and the `*ArchConfig` classes in `src/families/*.py`.
-- CLI-facing functions and scripts use long `--snake_case` options via `argparse` or `ValidateSet` in `run.ps1`.
+- Prefer explicit parameters or dataclass-based config objects over hidden globals. See `ArchConfig` in `src/adaptnas/search_space.py`, `UsadArchConfig` in `src/families/usad.py`, and `RawSWaTDataset.from_csvs` in `src/data/swat.py`.
+- Expose model-family knobs directly in the CLI layer, then pass them down unchanged. `src/pipeline.py` is the authoritative example.
+- Use keyword-only parameters when a function accepts several tuning knobs, as in `_window_loader` helpers in `src/families/usad.py` and `src/families/tranad.py`.
 
 **Return Values:**
-- Return plain dictionaries of scalar metrics, curves, or metadata from training and validation helpers, for example `train_bilevel` in `src/adaptnas/trainer.py`, `validate_usad_on_windows` in `src/families/usad.py`, and `compute_metrics` helpers in runner scripts.
-- Return `np.ndarray` or tuple outputs from loaders and preprocessing helpers unless a module already uses a dataclass wrapper, such as `RawSWaTDataset` in `src/data/swat.py` or `RawSMDMachine` in `src/data/omni_smd.py`.
+- Return NumPy arrays from loaders and scoring helpers, such as `load_raw_swat`, `build_upstream_usad_flat_windows`, and `score_tranad_windows`.
+- Return plain dictionaries for metrics, histories, and serialized outputs, such as `validate_usad_on_windows`, `train_bilevel`, and the JSON payload builders in `scripts/run_usad_upstream_swat.py`.
+- Dataset objects should return tuples that match `DataLoader` expectations, as in `ArrayDataset` in `src/data/datasets.py`.
 
 ## Module Design
 
 **Exports:**
-- Import concrete functions and classes from their owning module instead of relying on wildcard exports. `src/pipeline.py` imports directly from `src.data.*`, `src.families.*`, `src.models.*`, and `src.utils.metrics`.
-- Keep family modules self-contained. Each of `src/families/usad.py`, `src/families/tranad.py`, and `src/families/omni_anomaly.py` owns its architecture dataclass, model class, scorer, validator, and training loop.
+- Import most modules directly by file path. `src/pipeline.py` imports concrete symbols from `src.data.*`, `src.models.*`, and `src.families.*` rather than relying on package-wide re-export layers.
+- Use a barrel only when a package truly exposes a public family surface. `src/families/__init__.py` is the only deliberate example and defines `__all__`.
 
 **Barrel Files:**
-- Barrel files exist but are lightweight: `src/families/__init__.py`, `src/models/__init__.py`, `src/data/__init__.py`, and `src/utils/__init__.py`.
-- Mainline code still prefers direct submodule imports, so add new exports to the owning module first and update the barrel only when the package already exposes that surface.
-
-## Validation Conventions
-
-- Data loaders validate file existence, shapes, and protocol assumptions before training starts. Follow the patterns in `src/data/swat.py`, `src/data/omni_smd.py`, `src/data/tranad_smd.py`, and `scripts/preprocess.py`.
-- Metric helpers handle degenerate evaluation cases instead of crashing. `src/utils/metrics.py` falls back to `0.5` AUROC when only one class is present or metric computation fails.
-- Benchmark writers sanitize non-finite floats before serializing JSON. Reuse the `_sanitize_json` pattern from `scripts/run_all_smd.py`, `scripts/run_tranad_smd.py`, `scripts/run_usad_swat.py`, and `scripts/run_usad_upstream_swat.py`.
-- Windows PowerShell automation uses `ValidateSet`, explicit file existence checks, and `throw` for invalid state in `run.ps1`.
-
-## Subtree Differences
-
-- Prefer the newer typed style used in `src/data/*.py`, `src/families/*.py`, and most `scripts/*.py` for new work.
-- Treat `src/models/*.py`, `src/adaptnas/*.py`, and especially `src/ts_tcc/*` as legacy research code. Those areas use looser typing, denser scripts, more inline comments, and a different logging/import style.
-- Keep edits aligned with the local subtree instead of restyling the whole repo. For example, do not convert `src/ts_tcc/main.py` to `src.` absolute imports unless the task explicitly targets that subsystem.
-
-## Notable Inconsistencies
-
-- Determinism policy differs by subtree. `src/pipeline.py` and `scripts/run_tranad_upstream_smd.py` enable deterministic CuDNN settings, while `src/ts_tcc/main.py` sets `torch.backends.cudnn.deterministic = False`.
-- Text comments contain mixed English/Vietnamese and some mojibake in `src/utils/metrics.py`, `src/adaptnas/search_space.py`, and `src/adaptnas/optimizer.py`.
-- Runner coverage is uneven. `src/pipeline.py` supports `default_nasade`, `omni_anomaly`, `usad`, and `tranad`, but `scripts/run_all_smd.py` exposes only `default_nasade` and `omni_anomaly`.
-
-## Not Detected
-
-- No repo-local project skill directory under `.codex/skills/` or `.agents/skills/`.
-- No repo-level formatter, linter, type checker, or test runner configuration.
+- `src/families/__init__.py` is the only package that actively re-exports symbols.
+- `src/__init__.py`, `src/models/__init__.py`, `src/utils/__init__.py`, and `src/adaptnas/__init__.py` are minimal or empty. Do not assume package-level imports exist unless the file already exports them.
 
 ---
-
-*Convention analysis: 2026-04-27*
+*Convention analysis: 2026-05-10*
