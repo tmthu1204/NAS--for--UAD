@@ -1,7 +1,17 @@
 # scripts/preprocess_smd.py
 import argparse
 from pathlib import Path
+import os
+import sys
+
 import numpy as np
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+PROJ = os.path.dirname(ROOT)
+if PROJ not in sys.path:
+    sys.path.insert(0, PROJ)
+
+from src.utils.data_paths import resolve_raw_smd_root, resolve_smd_label_dir
 
 def _read_txt_matrix(p: Path) -> np.ndarray:
     import pandas as pd
@@ -58,10 +68,10 @@ def _labels_to_windows(y: np.ndarray, win: int, stride: int, T: int) -> np.ndarr
     return np.array([int(y[s:s+win].max() > 0) for s in starts], dtype=np.int64)
 
 def process_one_omni(root: Path, machine: str, out_root: Path, win=128, stride=64):
-    """OmniAnomaly layout: root/train|test|test_label/machine-*.txt"""
+    """Raw SMD layout: root/train|test|(test_label|labels)/machine-*.txt"""
     p_train = root / "train" / f"{machine}.txt"
     p_test  = root / "test" / f"{machine}.txt"
-    p_lab   = root / "test_label" / f"{machine}.txt"
+    p_lab   = resolve_smd_label_dir(root) / f"{machine}.txt"
 
     Xtr = _read_txt_matrix(p_train)
     Xte = _read_txt_matrix(p_test)
@@ -126,14 +136,18 @@ def main():
     ap.add_argument("--stride", type=int, default=64)
     args = ap.parse_args()
 
-    raw_root = Path(args.raw_root)
+    raw_root = resolve_raw_smd_root(args.raw_root)
     out_root = Path(args.out_root)
 
     if not raw_root.exists():
         raise FileNotFoundError(f"Raw root not found: {raw_root}")
 
     # Phát hiện layout OmniAnomaly vs CSV legacy
-    is_omni = (raw_root / "train").exists() and (raw_root / "test").exists() and (raw_root / "test_label").exists()
+    is_omni = (
+        (raw_root / "train").exists()
+        and (raw_root / "test").exists()
+        and resolve_smd_label_dir(raw_root).exists()
+    )
 
     if is_omni:
         machines = [args.machine] if args.machine else list_omni_machines(raw_root)

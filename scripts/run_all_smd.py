@@ -10,6 +10,11 @@ import math
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJ = os.path.dirname(ROOT)
+if PROJ not in sys.path:
+    sys.path.insert(0, PROJ)
+
+from src.utils.data_paths import resolve_raw_smd_root
+
 LOGS = os.path.join(PROJ, "outputs", "logs")
 os.makedirs(LOGS, exist_ok=True)
 BENCHMARKS = os.path.join(PROJ, "outputs", "benchmarks")
@@ -209,7 +214,7 @@ def main():
             print("family=omni_anomaly currently supports only mode=uad_source")
             sys.exit(1)
 
-        raw_root = Path(args.raw_smd_root)
+        raw_root = resolve_raw_smd_root(args.raw_smd_root)
         if not raw_root.exists():
             print(f"Raw SMD root not found: {raw_root}")
             sys.exit(1)

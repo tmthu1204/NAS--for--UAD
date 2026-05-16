@@ -63,6 +63,58 @@ $DatasetPaths = @{
     'adaptnas_combined' = 'data/smd/machine-1-1/train_normal.npz,data/smd/machine-1-1/target_pool_unlabeled.npz,data/smd/machine-1-1/val_mixed.npz,data/smd/machine-1-1/test_mixed.npz'
 }
 
+function Test-RawSmdLayout {
+    param([string]$RootPath)
+
+    if ([string]::IsNullOrWhiteSpace($RootPath)) {
+        return $false
+    }
+
+    return (
+        (Test-Path (Join-Path $RootPath 'train')) -and
+        (Test-Path (Join-Path $RootPath 'test')) -and
+        (
+            (Test-Path (Join-Path $RootPath 'test_label')) -or
+            (Test-Path (Join-Path $RootPath 'labels'))
+        )
+    )
+}
+
+function Resolve-RawSmdRoot {
+    param([string]$RequestedRoot)
+
+    $projectRoot = (Get-Location).Path
+    $candidates = @()
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedRoot)) {
+        $candidates += $RequestedRoot
+    }
+    $candidates += @(
+        'data/ServerMachineDataset',
+        'external/OmniAnomaly/ServerMachineDataset',
+        'external/tranad_upstream/data/SMD'
+    )
+
+    foreach ($candidate in $candidates) {
+        $expanded = if ([System.IO.Path]::IsPathRooted($candidate)) {
+            $candidate
+        }
+        else {
+            Join-Path $projectRoot $candidate
+        }
+
+        if (Test-RawSmdLayout -RootPath $expanded) {
+            return (Resolve-Path $expanded).Path
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedRoot)) {
+        return $RequestedRoot
+    }
+
+    return (Join-Path $projectRoot 'data/ServerMachineDataset')
+}
+
 function Build-DatasetPathFromDir {
     param(
         [string]$DirPath,
@@ -216,9 +268,10 @@ $Command = @(
 )
 
 if ($Family -eq 'omni_anomaly') {
+    $ResolvedRawSmdRoot = Resolve-RawSmdRoot -RequestedRoot $RawSmdRoot
     $Command += @(
         '--raw_smd_root'
-        $RawSmdRoot
+        $ResolvedRawSmdRoot
         '--machine'
         $Machine
     )
@@ -254,7 +307,7 @@ else {
 Write-Host "Running pipeline with mode: $Mode" -ForegroundColor Green
 Write-Host "Family: $Family" -ForegroundColor Yellow
 if ($Family -eq 'omni_anomaly') {
-    Write-Host "Raw SMD root: $RawSmdRoot" -ForegroundColor Yellow
+    Write-Host "Raw SMD root: $ResolvedRawSmdRoot" -ForegroundColor Yellow
     Write-Host "Machine: $Machine" -ForegroundColor Yellow
 }
 elseif ($Family -eq 'usad') {

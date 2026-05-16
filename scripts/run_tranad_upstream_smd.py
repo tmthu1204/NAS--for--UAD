@@ -29,6 +29,7 @@ from src.utils.metrics import (
     f1_at_threshold,
     pot_threshold,
 )
+from src.utils.data_paths import resolve_raw_smd_root
 
 
 LOGS = os.path.join(PROJ, "outputs", "logs")
@@ -111,6 +112,7 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--tag", default="")
     args = ap.parse_args()
+    args.raw_smd_root = str(resolve_raw_smd_root(args.raw_smd_root))
 
     set_global_seed(args.seed)
 

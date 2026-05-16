@@ -10,6 +10,11 @@ import torch
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJ = os.path.dirname(ROOT)
+if PROJ not in sys.path:
+    sys.path.insert(0, PROJ)
+
+from src.utils.data_paths import resolve_raw_smd_root
+
 LOGS = os.path.join(PROJ, "outputs", "logs")
 BENCHMARKS = os.path.join(PROJ, "outputs", "benchmarks")
 os.makedirs(LOGS, exist_ok=True)
@@ -79,6 +84,7 @@ def main():
     ap.add_argument("--tranad_fixed_only", action="store_true")
     ap.add_argument("--tag", default="")
     args = ap.parse_args()
+    args.raw_smd_root = str(resolve_raw_smd_root(args.raw_smd_root))
 
     py = sys.executable
     bench_name = "tranad-uad_source"

@@ -5,6 +5,8 @@ from typing import Tuple
 
 import numpy as np
 
+from src.utils.data_paths import resolve_raw_smd_root, resolve_smd_label_dir
+
 
 def _read_txt_matrix(path: Path) -> np.ndarray:
     try:
@@ -29,10 +31,10 @@ def _read_txt_labels(path: Path, expected_length: int) -> np.ndarray:
 
 
 def load_raw_tranad_smd_machine(raw_root: str | Path, machine: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    raw_root = Path(raw_root)
+    raw_root = resolve_raw_smd_root(raw_root)
     x_train = _read_txt_matrix(raw_root / "train" / f"{machine}.txt")
     x_test = _read_txt_matrix(raw_root / "test" / f"{machine}.txt")
-    y_test = _read_txt_labels(raw_root / "test_label" / f"{machine}.txt", expected_length=x_test.shape[0])
+    y_test = _read_txt_labels(resolve_smd_label_dir(raw_root) / f"{machine}.txt", expected_length=x_test.shape[0])
     return x_train, x_test, y_test
 
 

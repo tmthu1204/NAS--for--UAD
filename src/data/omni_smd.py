@@ -10,6 +10,8 @@ import torch
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import Dataset
 
+from src.utils.data_paths import resolve_raw_smd_root, resolve_smd_label_dir
+
 
 def _read_txt_matrix(path: Path) -> np.ndarray:
     try:
@@ -57,10 +59,10 @@ def fit_official_minmax_separately(train: np.ndarray, test: np.ndarray) -> Tuple
 
 
 def load_raw_smd_machine(raw_root: str | Path, machine: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    raw_root = Path(raw_root)
+    raw_root = resolve_raw_smd_root(raw_root)
     p_train = raw_root / "train" / f"{machine}.txt"
     p_test = raw_root / "test" / f"{machine}.txt"
-    p_label = raw_root / "test_label" / f"{machine}.txt"
+    p_label = resolve_smd_label_dir(raw_root) / f"{machine}.txt"
 
     x_train = _read_txt_matrix(p_train)
     x_test = _read_txt_matrix(p_test)

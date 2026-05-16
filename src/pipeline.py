@@ -77,6 +77,7 @@ from src.models.transformer import ARTransformer
 from src.models.classifier import MLP
 from src.models.discriminator import DomainDiscriminator
 from src.models.deepsvdd import DeepSVDD
+from src.utils.data_paths import resolve_raw_smd_root
 
 from src.utils.metrics import (
     compute_ap_auroc, pot_threshold, f1_at_threshold, best_f1, event_f1_and_delay
@@ -662,6 +663,7 @@ def run_final_only_option2(
     in_ch,
     N_ITERS,
     tstcc_backbone,
+    seed,
     out_dir="outputs",
 ):
     """
@@ -685,7 +687,7 @@ def run_final_only_option2(
 
     _set_requires_grad(model, False)
     if len(Xs) > 5000:
-        idx_fit = np.random.RandomState(42).choice(len(Xs), size=5000, replace=False)
+        idx_fit = np.random.RandomState(seed).choice(len(Xs), size=5000, replace=False)
         Xs_fit = Xs[idx_fit]
     else:
         Xs_fit = Xs
@@ -693,7 +695,7 @@ def run_final_only_option2(
     Fs = extract_candidate_features(model, Xs_fit, device=device, batch_size=256)
     svdd = fit_deepsvdd_on_features(
         Fs, device=device, hidden_dim=128, rep_dim=64, nu=svdd_nu,
-        epochs=svdd_epochs, warmup_epochs=svdd_warmup_epochs, lr=1e-3, bs=1024, seed=42
+        epochs=svdd_epochs, warmup_epochs=svdd_warmup_epochs, lr=1e-3, bs=1024, seed=seed
     )
 
     raw = score_candidate_svdd_stream(model, svdd, X_target_pool, device=device, batch_size=256, mode="dist2")
@@ -797,6 +799,7 @@ def svdd_objective_on_source_normal(
     svdd_warmup_epochs=2,
     svdd_nu=0.05,
     max_fit=5000,
+    seed=42,
 ):
     """
     Objective to MINIMIZE:
@@ -808,7 +811,7 @@ def svdd_objective_on_source_normal(
     cand.eval()
 
     if max_fit is not None and len(X_train_norm) > max_fit:
-        idx_fit = np.random.RandomState(42).choice(len(X_train_norm), size=max_fit, replace=False)
+        idx_fit = np.random.RandomState(seed).choice(len(X_train_norm), size=max_fit, replace=False)
         X_fit = X_train_norm[idx_fit]
     else:
         X_fit = X_train_norm
@@ -820,7 +823,7 @@ def svdd_objective_on_source_normal(
         nu=svdd_nu,
         epochs=svdd_epochs,
         warmup_epochs=svdd_warmup_epochs,
-        lr=1e-3, bs=1024, seed=42
+        lr=1e-3, bs=1024, seed=seed
     )
 
     F_val = extract_candidate_features(cand, X_val_norm, device=device, batch_size=256)
@@ -841,6 +844,7 @@ def fit_final_svdd_and_score(
     svdd_warmup_epochs=5,
     svdd_nu=0.05,
     max_fit=5000,
+    seed=42,
 ):
     """
     Fit SVDD on full train normal-only features, then score eval data by dist2.
@@ -850,7 +854,7 @@ def fit_final_svdd_and_score(
     _set_requires_grad(cand, False)
 
     if max_fit is not None and len(X_train_norm) > max_fit:
-        idx_fit = np.random.RandomState(42).choice(len(X_train_norm), size=max_fit, replace=False)
+        idx_fit = np.random.RandomState(seed).choice(len(X_train_norm), size=max_fit, replace=False)
         X_fit = X_train_norm[idx_fit]
     else:
         X_fit = X_train_norm
@@ -862,7 +866,7 @@ def fit_final_svdd_and_score(
         nu=svdd_nu,
         epochs=svdd_epochs,
         warmup_epochs=svdd_warmup_epochs,
-        lr=1e-3, bs=1024, seed=42
+        lr=1e-3, bs=1024, seed=seed
     )
 
     scores_train = score_candidate_svdd_stream(cand, svdd, X_train_norm, device=device, batch_size=256, mode="dist2")
@@ -1254,6 +1258,7 @@ def _evaluate_tranad_arch_on_raw_source(
 
 
 def run_tranad_uad_source_family_raw(*, raw_smd_root, machine, device, args):
+    raw_smd_root = resolve_raw_smd_root(raw_smd_root)
     x_train, x_test, y_test = load_raw_tranad_smd_machine(raw_smd_root, machine)
 
     train_start = max(0, int(getattr(args, "tranad_train_start", 0)))
@@ -1689,6 +1694,7 @@ def run_usad_uad_source_family_raw(*, swat_train_csv, swat_test_csv, device, arg
 
 
 def run_omni_uad_source_family_raw(*, raw_smd_root, machine, device, args):
+    raw_smd_root = resolve_raw_smd_root(raw_smd_root)
     machine_data = RawSMDMachine.from_root(
         raw_smd_root,
         machine,
@@ -1884,7 +1890,7 @@ def main():
                             "adaptnas_combined: train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz[,test_mixed.npz]"
                         ))
     parser.add_argument("--raw_smd_root", default="data/ServerMachineDataset",
-                        help="Official raw SMD root with train/test/test_label folders. Used by family=omni_anomaly.")
+                        help="Raw SMD root with train/test/(test_label|labels). Falls back to external SMD mirrors when needed.")
     parser.add_argument("--machine", default=None,
                         help="Machine id like machine-1-1. Used by family=omni_anomaly.")
     parser.add_argument("--swat_train_csv", default="data/SWaT/SWaT_Dataset_Normal_v1.csv",
@@ -1894,6 +1900,7 @@ def main():
     parser.add_argument("--epochs_pretrain", type=int, default=10)
     parser.add_argument("--search_candidates", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--combined_upper_gap", type=float, default=1.0,
                         help="Weight for source-target feature-gap term in unlabeled upper-level objective.")
@@ -1987,7 +1994,7 @@ def main():
     parser.add_argument("--tranad_pot_level", type=float, default=0.99)
     args = parser.parse_args()
 
-    set_global_seed(42)
+    set_global_seed(args.seed)
 
     os.makedirs("outputs/figures", exist_ok=True)
     os.makedirs("outputs/checkpoints", exist_ok=True)
@@ -2213,7 +2220,7 @@ def main():
 
     if args.mode == "uad_source":
         # split train_normal into train/val-normal for SVDD objective selection
-        rng = np.random.RandomState(42)
+        rng = np.random.RandomState(args.seed)
         perm = rng.permutation(len(X_train_norm))
         n_val = max(50, int(0.2 * len(X_train_norm))) if len(X_train_norm) >= 250 else max(1, int(0.2 * len(X_train_norm)))
         idx_val = perm[:n_val]
@@ -2246,6 +2253,7 @@ def main():
                     svdd_warmup_epochs=svdd_warmup_epochs,
                     svdd_nu=svdd_nu,
                     max_fit=5000,
+                    seed=args.seed,
                 )
 
                 history.append({
@@ -2272,7 +2280,7 @@ def main():
 
     else:
         # ================= ADAPTNAS-COMBINED (source-normal + separate target pool when available) =================
-        Xs_train, Xs_holdout = split_source_holdout_normal(X_train_norm, holdout_ratio=0.2, seed=42)
+        Xs_train, Xs_holdout = split_source_holdout_normal(X_train_norm, holdout_ratio=0.2, seed=args.seed)
         Xs = Xs_train
         Ys = Ys_source
         Xt_train = X_target_pool
@@ -2311,7 +2319,7 @@ def main():
                 _set_requires_grad(cand, False)
 
                 if max_svdd_fit is not None and len(Xs) > max_svdd_fit:
-                    idx_fit = np.random.RandomState(42).choice(len(Xs), size=max_svdd_fit, replace=False)
+                    idx_fit = np.random.RandomState(args.seed).choice(len(Xs), size=max_svdd_fit, replace=False)
                     Xs_fit = Xs[idx_fit]
                 else:
                     Xs_fit = Xs
@@ -2323,7 +2331,7 @@ def main():
                     nu=svdd_nu,
                     epochs=svdd_epochs,
                     warmup_epochs=svdd_warmup_epochs,
-                    lr=1e-3, bs=1024, seed=42
+                    lr=1e-3, bs=1024, seed=args.seed
                 )
 
                 raw = score_candidate_svdd_stream(cand, svdd, Xt_train, device=device, batch_size=256, mode="dist2")
@@ -2438,6 +2446,7 @@ def main():
             svdd_warmup_epochs=5,
             svdd_nu=0.05,
             max_fit=5000,
+            seed=args.seed,
         )
 
         ap, auroc = compute_ap_auroc(y_eval, scores_eval)
@@ -2470,7 +2479,7 @@ def main():
 
     else:
         # combined final-only baselines (Base_* + NAS_BestArch)
-        Xs, Xs_holdout = split_source_holdout_normal(X_train_norm, holdout_ratio=0.2, seed=42)
+        Xs, Xs_holdout = split_source_holdout_normal(X_train_norm, holdout_ratio=0.2, seed=args.seed)
         Ys = Ys_source
         Xt_train = X_target_pool
 
@@ -2500,6 +2509,7 @@ def main():
                 in_ch=in_ch,
                 N_ITERS=N_ITERS,
                 tstcc_backbone=tstcc_backbone,
+                seed=args.seed,
                 out_dir="outputs",
             )
 
