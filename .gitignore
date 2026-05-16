@@ -12,3 +12,5 @@ venv/
 external/
 .codex/
 data/
+outputs/
+results/
