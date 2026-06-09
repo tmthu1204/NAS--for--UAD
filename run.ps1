@@ -14,6 +14,48 @@ param(
     [int]$EpochsPretrain = 50,
     [int]$SearchCandidates = 20,
     [int]$BatchSize = 128,
+    [ValidateSet('deepsvdd', 'autoencoder', 'knn_distance', 'oneclass_svm', 'svdd', 'prototype_oneclass', 'mahalanobis_head', 'gmm_head')]
+    [string]$OneClassMethod = 'deepsvdd',
+    [int]$OneClassEpochs = 10,
+    [int]$OneClassFinalEpochs = 20,
+    [double]$OneClassLr = 0.001,
+    [int]$OneClassBatchSize = 1024,
+    [int]$OneClassMaxFit = 5000,
+    [int]$KnnK = 5,
+    [double]$OcsvmNu = 0.05,
+    [ValidateSet('linear', 'rbf', 'poly', 'sigmoid')]
+    [string]$OcsvmKernel = 'rbf',
+    [string]$OcsvmGamma = 'scale',
+    [int]$OcsvmDegree = 3,
+    [double]$OcsvmCoef0 = 0.0,
+    [int]$SvddHiddenDim = 128,
+    [int]$SvddRepDim = 64,
+    [double]$SvddNu = 0.05,
+    [int]$SvddWarmupEpochs = 2,
+    [int]$SvddFinalWarmupEpochs = 5,
+    [int]$AeHiddenDim = 128,
+    [int]$AeLatentDim = 64,
+    [int]$MahaHiddenDim = 128,
+    [int]$MahaRepDim = 64,
+    [double]$MahaShrinkage = 0.01,
+    [int]$GmmHiddenDim = 128,
+    [int]$GmmRepDim = 64,
+    [int]$GmmComponents = 3,
+    [ValidateSet('diag', 'full')]
+    [string]$GmmCovarianceType = 'diag',
+    [double]$GmmRegCovar = 0.0001,
+    [int]$GmmWarmupEpochs = 2,
+    [int]$ProtoHiddenDim = 128,
+    [int]$ProtoRepDim = 64,
+    [int]$ProtoCount = 4,
+    [double]$ProtoSeparationWeight = 0.1,
+    [double]$ProtoSeparationMargin = 1.0,
+    [int]$NasSearchIters = 3,
+    [int]$CombinedSearchCandidateWarmupSteps = 50,
+    [int]$CombinedSearchSteps = 80,
+    [int]$CombinedFinalCandidateWarmupSteps = 80,
+    [int]$CombinedFinalSteps = 200,
+    [int]$CombinedFinalPatience = 10,
     [int]$OmniEpochs = 20,
     [int]$OmniFinalEpochs = 20,
     [double]$OmniLr = 0.001,
@@ -195,6 +237,84 @@ $Command = @(
     $SearchCandidates
     '--batch_size'
     $BatchSize
+    '--oneclass_method'
+    $OneClassMethod
+    '--oneclass_epochs'
+    $OneClassEpochs
+    '--oneclass_final_epochs'
+    $OneClassFinalEpochs
+    '--oneclass_lr'
+    $OneClassLr
+    '--oneclass_batch_size'
+    $OneClassBatchSize
+    '--oneclass_max_fit'
+    $OneClassMaxFit
+    '--knn_k'
+    $KnnK
+    '--ocsvm_nu'
+    $OcsvmNu
+    '--ocsvm_kernel'
+    $OcsvmKernel
+    '--ocsvm_gamma'
+    $OcsvmGamma
+    '--ocsvm_degree'
+    $OcsvmDegree
+    '--ocsvm_coef0'
+    $OcsvmCoef0
+    '--svdd_hidden_dim'
+    $SvddHiddenDim
+    '--svdd_rep_dim'
+    $SvddRepDim
+    '--svdd_nu'
+    $SvddNu
+    '--svdd_warmup_epochs'
+    $SvddWarmupEpochs
+    '--svdd_final_warmup_epochs'
+    $SvddFinalWarmupEpochs
+    '--ae_hidden_dim'
+    $AeHiddenDim
+    '--ae_latent_dim'
+    $AeLatentDim
+    '--maha_hidden_dim'
+    $MahaHiddenDim
+    '--maha_rep_dim'
+    $MahaRepDim
+    '--maha_shrinkage'
+    $MahaShrinkage
+    '--gmm_hidden_dim'
+    $GmmHiddenDim
+    '--gmm_rep_dim'
+    $GmmRepDim
+    '--gmm_components'
+    $GmmComponents
+    '--gmm_covariance_type'
+    $GmmCovarianceType
+    '--gmm_reg_covar'
+    $GmmRegCovar
+    '--gmm_warmup_epochs'
+    $GmmWarmupEpochs
+    '--proto_hidden_dim'
+    $ProtoHiddenDim
+    '--proto_rep_dim'
+    $ProtoRepDim
+    '--proto_count'
+    $ProtoCount
+    '--proto_separation_weight'
+    $ProtoSeparationWeight
+    '--proto_separation_margin'
+    $ProtoSeparationMargin
+    '--nas_search_iters'
+    $NasSearchIters
+    '--combined_search_candidate_warmup_steps'
+    $CombinedSearchCandidateWarmupSteps
+    '--combined_search_steps'
+    $CombinedSearchSteps
+    '--combined_final_candidate_warmup_steps'
+    $CombinedFinalCandidateWarmupSteps
+    '--combined_final_steps'
+    $CombinedFinalSteps
+    '--combined_final_patience'
+    $CombinedFinalPatience
     '--omni_epochs'
     $OmniEpochs
     '--omni_final_epochs'
@@ -316,6 +436,9 @@ elseif ($Family -eq 'usad') {
 }
 elseif (-not [string]::IsNullOrWhiteSpace($DataDir)) {
     Write-Host "Data directory: $DataDir" -ForegroundColor Yellow
+}
+if ($Family -eq 'default_nasade') {
+    Write-Host "One-class method: $OneClassMethod" -ForegroundColor Yellow
 }
 Write-Host "Resolved device: $ResolvedDevice" -ForegroundColor Yellow
 Write-Host "Command: $($Command -join ' ')" -ForegroundColor Cyan

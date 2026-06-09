@@ -282,6 +282,7 @@ def run_mode_for_case_seed(
     batch_size: int,
     device: str,
     combined_upper_gap: float,
+    oneclass_cli_args,
     force: bool,
 ):
     ensure_dir(run_dir)
@@ -318,6 +319,7 @@ def run_mode_for_case_seed(
         "--seed",
         str(seed),
     ]
+    cmd.extend(oneclass_cli_args)
 
     start_time = time.time()
     code = run_cmd(cmd, PROJ_ROOT, log_path)
@@ -620,6 +622,39 @@ def parse_args():
     ap.add_argument("--epochs_pretrain", type=int, default=10)
     ap.add_argument("--search_candidates", type=int, default=5)
     ap.add_argument("--batch_size", type=int, default=64)
+    ap.add_argument("--oneclass_method", default="deepsvdd", choices=["deepsvdd", "autoencoder", "knn_distance", "oneclass_svm", "svdd", "prototype_oneclass", "mahalanobis_head", "gmm_head"])
+    ap.add_argument("--oneclass_epochs", type=int, default=10)
+    ap.add_argument("--oneclass_final_epochs", type=int, default=20)
+    ap.add_argument("--oneclass_lr", type=float, default=1e-3)
+    ap.add_argument("--oneclass_batch_size", type=int, default=1024)
+    ap.add_argument("--oneclass_max_fit", type=int, default=5000)
+    ap.add_argument("--knn_k", type=int, default=5)
+    ap.add_argument("--ocsvm_nu", type=float, default=0.05)
+    ap.add_argument("--ocsvm_kernel", default="rbf", choices=["linear", "rbf", "poly", "sigmoid"])
+    ap.add_argument("--ocsvm_gamma", default="scale")
+    ap.add_argument("--ocsvm_degree", type=int, default=3)
+    ap.add_argument("--ocsvm_coef0", type=float, default=0.0)
+    ap.add_argument("--svdd_hidden_dim", type=int, default=128)
+    ap.add_argument("--svdd_rep_dim", type=int, default=64)
+    ap.add_argument("--svdd_nu", type=float, default=0.05)
+    ap.add_argument("--svdd_warmup_epochs", type=int, default=2)
+    ap.add_argument("--svdd_final_warmup_epochs", type=int, default=5)
+    ap.add_argument("--ae_hidden_dim", type=int, default=128)
+    ap.add_argument("--ae_latent_dim", type=int, default=64)
+    ap.add_argument("--maha_hidden_dim", type=int, default=128)
+    ap.add_argument("--maha_rep_dim", type=int, default=64)
+    ap.add_argument("--maha_shrinkage", type=float, default=1e-2)
+    ap.add_argument("--gmm_hidden_dim", type=int, default=128)
+    ap.add_argument("--gmm_rep_dim", type=int, default=64)
+    ap.add_argument("--gmm_components", type=int, default=3)
+    ap.add_argument("--gmm_covariance_type", default="diag", choices=["diag", "full"])
+    ap.add_argument("--gmm_reg_covar", type=float, default=1e-4)
+    ap.add_argument("--gmm_warmup_epochs", type=int, default=2)
+    ap.add_argument("--proto_hidden_dim", type=int, default=128)
+    ap.add_argument("--proto_rep_dim", type=int, default=64)
+    ap.add_argument("--proto_count", type=int, default=4)
+    ap.add_argument("--proto_separation_weight", type=float, default=0.1)
+    ap.add_argument("--proto_separation_margin", type=float, default=1.0)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--combined_upper_gap", type=float, default=1.0)
     ap.add_argument("--split_seed", type=int, default=42)
@@ -632,6 +667,41 @@ def parse_args():
 def main():
     args = parse_args()
     py = sys.executable
+    oneclass_cli_args = [
+        "--oneclass_method", args.oneclass_method,
+        "--oneclass_epochs", str(args.oneclass_epochs),
+        "--oneclass_final_epochs", str(args.oneclass_final_epochs),
+        "--oneclass_lr", str(args.oneclass_lr),
+        "--oneclass_batch_size", str(args.oneclass_batch_size),
+        "--oneclass_max_fit", str(args.oneclass_max_fit),
+        "--knn_k", str(args.knn_k),
+        "--ocsvm_nu", str(args.ocsvm_nu),
+        "--ocsvm_kernel", args.ocsvm_kernel,
+        "--ocsvm_gamma", str(args.ocsvm_gamma),
+        "--ocsvm_degree", str(args.ocsvm_degree),
+        "--ocsvm_coef0", str(args.ocsvm_coef0),
+        "--svdd_hidden_dim", str(args.svdd_hidden_dim),
+        "--svdd_rep_dim", str(args.svdd_rep_dim),
+        "--svdd_nu", str(args.svdd_nu),
+        "--svdd_warmup_epochs", str(args.svdd_warmup_epochs),
+        "--svdd_final_warmup_epochs", str(args.svdd_final_warmup_epochs),
+        "--ae_hidden_dim", str(args.ae_hidden_dim),
+        "--ae_latent_dim", str(args.ae_latent_dim),
+        "--maha_hidden_dim", str(args.maha_hidden_dim),
+        "--maha_rep_dim", str(args.maha_rep_dim),
+        "--maha_shrinkage", str(args.maha_shrinkage),
+        "--gmm_hidden_dim", str(args.gmm_hidden_dim),
+        "--gmm_rep_dim", str(args.gmm_rep_dim),
+        "--gmm_components", str(args.gmm_components),
+        "--gmm_covariance_type", args.gmm_covariance_type,
+        "--gmm_reg_covar", str(args.gmm_reg_covar),
+        "--gmm_warmup_epochs", str(args.gmm_warmup_epochs),
+        "--proto_hidden_dim", str(args.proto_hidden_dim),
+        "--proto_rep_dim", str(args.proto_rep_dim),
+        "--proto_count", str(args.proto_count),
+        "--proto_separation_weight", str(args.proto_separation_weight),
+        "--proto_separation_margin", str(args.proto_separation_margin),
+    ]
     processed_root = Path(args.processed_root)
     experiments_root = Path(args.experiments_root)
     output_root = Path(args.output_root)
@@ -738,6 +808,7 @@ def main():
                 batch_size=args.batch_size,
                 device=args.device,
                 combined_upper_gap=args.combined_upper_gap,
+                oneclass_cli_args=oneclass_cli_args,
                 force=args.force_run,
             )
             run_mode_for_case_seed(
@@ -751,6 +822,7 @@ def main():
                 batch_size=args.batch_size,
                 device=args.device,
                 combined_upper_gap=args.combined_upper_gap,
+                oneclass_cli_args=oneclass_cli_args,
                 force=args.force_run,
             )
 
@@ -780,6 +852,39 @@ def main():
             "epochs_pretrain": args.epochs_pretrain,
             "search_candidates": args.search_candidates,
             "batch_size": args.batch_size,
+            "oneclass_method": args.oneclass_method,
+            "oneclass_epochs": args.oneclass_epochs,
+            "oneclass_final_epochs": args.oneclass_final_epochs,
+            "oneclass_lr": args.oneclass_lr,
+            "oneclass_batch_size": args.oneclass_batch_size,
+            "oneclass_max_fit": args.oneclass_max_fit,
+            "knn_k": args.knn_k,
+            "ocsvm_nu": args.ocsvm_nu,
+            "ocsvm_kernel": args.ocsvm_kernel,
+            "ocsvm_gamma": args.ocsvm_gamma,
+            "ocsvm_degree": args.ocsvm_degree,
+            "ocsvm_coef0": args.ocsvm_coef0,
+            "svdd_hidden_dim": args.svdd_hidden_dim,
+            "svdd_rep_dim": args.svdd_rep_dim,
+            "svdd_nu": args.svdd_nu,
+            "svdd_warmup_epochs": args.svdd_warmup_epochs,
+            "svdd_final_warmup_epochs": args.svdd_final_warmup_epochs,
+            "ae_hidden_dim": args.ae_hidden_dim,
+            "ae_latent_dim": args.ae_latent_dim,
+            "maha_hidden_dim": args.maha_hidden_dim,
+            "maha_rep_dim": args.maha_rep_dim,
+            "maha_shrinkage": args.maha_shrinkage,
+            "gmm_hidden_dim": args.gmm_hidden_dim,
+            "gmm_rep_dim": args.gmm_rep_dim,
+            "gmm_components": args.gmm_components,
+            "gmm_covariance_type": args.gmm_covariance_type,
+            "gmm_reg_covar": args.gmm_reg_covar,
+            "gmm_warmup_epochs": args.gmm_warmup_epochs,
+            "proto_hidden_dim": args.proto_hidden_dim,
+            "proto_rep_dim": args.proto_rep_dim,
+            "proto_count": args.proto_count,
+            "proto_separation_weight": args.proto_separation_weight,
+            "proto_separation_margin": args.proto_separation_margin,
             "device": args.device,
             "split_seed": args.split_seed,
         },

@@ -4,6 +4,7 @@ set -e
 DATASET_OR_PATHS=${1:-}
 MODE=${2:-uad_source}
 GPU=${3:-0}
+ONECLASS_METHOD=${4:-deepsvdd}
 
 if [ -z "$DATASET_OR_PATHS" ]; then
   echo "Usage: $0 <dataset_or_paths> [mode] [gpu]"
@@ -15,10 +16,12 @@ fi
 
 export CUDA_VISIBLE_DEVICES=${GPU}
 echo "Running pipeline. CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+echo "One-class method: ${ONECLASS_METHOD}"
 
 python -m src.pipeline \
   --dataset_or_paths "${DATASET_OR_PATHS}" \
   --mode "${MODE}" \
   --epochs_pretrain 20 \
   --search_candidates 5 \
-  --batch_size 64
+  --batch_size 64 \
+  --oneclass_method "${ONECLASS_METHOD}"

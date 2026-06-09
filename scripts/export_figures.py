@@ -21,11 +21,16 @@ with open(args.results, 'r') as f:
 
 # Example: plot search history
 if isinstance(r.get('search_history'), list) and len(r['search_history']) > 0:
-    # support both dicts with 'score' and float directly
+    # Support both legacy and newer search-objective keys.
     scores = []
+    score_key_used = None
     for s in r['search_history']:
-        if isinstance(s, dict) and 'score' in s:
-            scores.append(s['score'])
+        if isinstance(s, dict):
+            for key in ('score', 'oneclass_obj', 'svdd_obj', 'upper_obj'):
+                if key in s:
+                    scores.append(s[key])
+                    score_key_used = key
+                    break
         else:
             try:
                 scores.append(float(s))
@@ -34,9 +39,9 @@ if isinstance(r.get('search_history'), list) and len(r['search_history']) > 0:
     if scores:
         plt.figure()
         plt.plot(scores, marker='o')
-        plt.title('Search combined validation score (lower better)')
+        plt.title('Search objective history (lower better)')
         plt.xlabel('candidate')
-        plt.ylabel('score')
+        plt.ylabel(score_key_used or 'score')
         plt.grid(True)
         plt.tight_layout()
         plt.savefig(os.path.join(args.outdir, 'search_history.png'))

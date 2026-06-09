@@ -8,7 +8,7 @@ This repository contains experiments for unsupervised anomaly detection (UAD) on
 
 The codebase currently supports four model families:
 
-- `default_nasade`: TS-TCC + CNN/GRU/TCN/Transformer candidate search with DeepSVDD-style scoring
+- `default_nasade`: TS-TCC + CNN/GRU/TCN/Transformer candidate search with pluggable one-class scoring
 - `omni_anomaly`: paper-style OmniAnomaly on raw SMD
 - `tranad`: upstream-faithful TranAD on raw SMD
 - `usad`: paper-style USAD on raw SWaT
@@ -34,6 +34,21 @@ adaptnas_combined:
   train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz[,test_mixed.npz]
 ```
 
+`default_nasade` now supports pluggable one-class backends through `--oneclass_method`:
+
+- `deepsvdd` (default)
+- `autoencoder`
+- `knn_distance`
+- `oneclass_svm`
+- `svdd`
+- `prototype_oneclass`
+- `mahalanobis_head`
+- `gmm_head`
+
+Framework diagram for the current `adaptnas_combined` implementation:
+
+- [docs/docs/adaptnas_combined_framework_diagram.md](docs/docs/adaptnas_combined_framework_diagram.md)
+
 ### 2. Paper-faithful source-only baselines
 
 - `omni_anomaly`
@@ -50,7 +65,9 @@ These families are implemented only for `--mode uad_source`.
 The repo also includes utilities to:
 
 - preprocess raw SMD into per-machine `.npz` caches
+- preprocess raw SMAP/MSL into per-channel `.npz` caches
 - build temporal-shift and cross-machine source/target splits
+- build temporal-shift and cross-entity source/target splits
 - rank source-target pairs using JEPA-style latent features + PAD
 - run case matrices for high-shift vs low-shift comparisons
 
@@ -85,8 +102,14 @@ src/
 
 scripts/
   preprocess_smd.py
+  preprocess_smap.py
+  preprocess_msl.py
   make_uad_smd.py
+  make_uad_smap.py
+  make_uad_msl.py
   build_domain_shift_smd.py
+  build_domain_shift_smap.py
+  build_domain_shift_msl.py
   pilot_rank_jepa_pad_smd.py
   run_domain_shift_case_matrix.py
   run_all_smd.py
@@ -167,6 +190,36 @@ data/SWaT/
   SWaT_Dataset_Attack_v0.csv
 ```
 
+### Raw SMAP
+
+Raw SMAP is expected in a Telemanom-style layout like:
+
+```text
+data/SMAP_MSL/
+  train/
+  test/
+  labeled_anomalies.csv
+```
+
+The repo resolves raw SMAP roots automatically from common locations such as:
+
+- `data/SMAP_MSL`
+- `external/tranad_upstream/data/SMAP_MSL`
+- `external/OmniAnomaly/data`
+
+### Raw MSL
+
+Raw MSL uses the same Telemanom-style layout:
+
+```text
+data/SMAP_MSL/
+  train/
+  test/
+  labeled_anomalies.csv
+```
+
+The repo resolves raw MSL roots from the same common locations as SMAP.
+
 ### Processed SMD cache
 
 For `default_nasade` experiments, raw SMD is typically converted into per-machine caches:
@@ -174,6 +227,24 @@ For `default_nasade` experiments, raw SMD is typically converted into per-machin
 ```text
 data/smd/machine-*/source.npz
 data/smd/machine-*/target.npz
+```
+
+### Processed SMAP cache
+
+For `default_nasade` experiments, raw SMAP is typically converted into per-channel caches:
+
+```text
+data/smap/<channel-id>/source.npz
+data/smap/<channel-id>/target.npz
+```
+
+### Processed MSL cache
+
+For `default_nasade` experiments, raw MSL is typically converted into per-channel caches:
+
+```text
+data/msl/<channel-id>/source.npz
+data/msl/<channel-id>/target.npz
 ```
 
 ## Quick Start
@@ -184,7 +255,7 @@ data/smd/machine-*/target.npz
 .\venv\Scripts\python.exe scripts\preprocess_smd.py --raw_root data/ServerMachineDataset --out_root data/smd --machine machine-1-1 --window 128 --stride 64
 ```
 
-### 2. Build a cross-machine UAD experiment split
+### 2. Build a cross-machine SMD UAD experiment split
 
 ```powershell
 .\venv\Scripts\python.exe scripts\make_uad_smd.py `
@@ -198,33 +269,75 @@ data/smd/machine-*/target.npz
   --out_dir data/smd_experiments/cross_machine_hard/machine-1-1__to__machine-1-3
 ```
 
-### 3. Run `default_nasade` in source-only mode
+### 3. Preprocess SMAP into per-channel caches
+
+```powershell
+.\venv\Scripts\python.exe scripts\preprocess_smap.py --raw_root data/SMAP_MSL --out_root data/smap --channel A-1 --window 128 --stride 64
+```
+
+### 4. Build a cross-entity SMAP covariate-shift split
+
+```powershell
+.\venv\Scripts\python.exe scripts\make_uad_smap.py `
+  --channel_dir data/smap/A-1 `
+  --target_channel_dir data/smap/A-3 `
+  --split_mode search `
+  --shift_level auto `
+  --target_pool_frac 0.1 `
+  --val_frac 0.2 `
+  --out_dir data/smap_experiments/cross_entity_auto/A-1__to__A-3
+```
+
+### 5. Preprocess MSL into per-channel caches
+
+```powershell
+.\venv\Scripts\python.exe scripts\preprocess_msl.py --raw_root data/SMAP_MSL --out_root data/msl --channel M-1 --window 128 --stride 64
+```
+
+### 6. Build a cross-entity MSL covariate-shift split
+
+```powershell
+.\venv\Scripts\python.exe scripts\make_uad_msl.py `
+  --channel_dir data/msl/M-1 `
+  --target_channel_dir data/msl/M-7 `
+  --split_mode search `
+  --shift_level auto `
+  --target_pool_frac 0.1 `
+  --val_frac 0.2 `
+  --out_dir data/msl_experiments/cross_entity_auto/M-1__to__M-7
+```
+
+### 7. Run `default_nasade` in source-only mode
 
 ```powershell
 .\venv\Scripts\python.exe -m src.pipeline `
   --dataset_or_paths data/smd_experiments/cross_machine_hard/machine-1-1__to__machine-1-3/train_normal.npz,data/smd_experiments/cross_machine_hard/machine-1-1__to__machine-1-3/val_mixed.npz,data/smd_experiments/cross_machine_hard/machine-1-1__to__machine-1-3/test_mixed.npz `
   --mode uad_source `
   --family default_nasade `
+  --oneclass_method deepsvdd `
   --epochs_pretrain 10 `
   --search_candidates 5 `
   --batch_size 64 `
   --device cuda
 ```
 
-### 4. Run `default_nasade` in combined mode
+### 8. Run `default_nasade` in combined mode
 
 ```powershell
 .\venv\Scripts\python.exe -m src.pipeline `
   --dataset_or_paths data/smd_experiments/cross_machine_hard/machine-1-1__to__machine-1-3/train_normal.npz,data/smd_experiments/cross_machine_hard/machine-1-1__to__machine-1-3/target_pool_unlabeled.npz,data/smd_experiments/cross_machine_hard/machine-1-1__to__machine-1-3/val_mixed.npz,data/smd_experiments/cross_machine_hard/machine-1-1__to__machine-1-3/test_mixed.npz `
   --mode adaptnas_combined `
   --family default_nasade `
+  --oneclass_method autoencoder `
   --epochs_pretrain 10 `
   --search_candidates 5 `
   --batch_size 64 `
   --device cuda
 ```
 
-### 5. Run OmniAnomaly on raw SMD
+The same `src.pipeline` commands work for SMAP/MSL once `dataset_or_paths` points to a generated folder under `data/smap_experiments/` or `data/msl_experiments/`.
+
+### 9. Run OmniAnomaly on raw SMD
 
 ```powershell
 .\venv\Scripts\python.exe -m src.pipeline `
@@ -236,7 +349,7 @@ data/smd/machine-*/target.npz
   --device cuda
 ```
 
-### 6. Run TranAD on raw SMD
+### 10. Run TranAD on raw SMD
 
 ```powershell
 .\venv\Scripts\python.exe -m src.pipeline `
@@ -256,7 +369,7 @@ Or use the dedicated helper:
 .\venv\Scripts\python.exe scripts\run_tranad_smd.py --machine machine-1-1 --device cuda
 ```
 
-### 7. Run USAD on raw SWaT
+### 11. Run USAD on raw SWaT
 
 ```powershell
 .\venv\Scripts\python.exe -m src.pipeline `
@@ -404,3 +517,5 @@ Experiment notes and report drafts live under [docs/docs](docs/docs). This inclu
 - `run_all_smd.py` currently supports `default_nasade` and `omni_anomaly`.
 - Raw datasets are not bundled by Git.
 - For cross-machine experiments, prefer using generated folders under `data/smd_experiments/` rather than editing the original per-machine caches.
+- For SMAP covariate-shift experiments, the default builder keeps transfer within the same channel-prefix family unless you explicitly allow cross-prefix pairs.
+- For MSL covariate-shift experiments, the default builder also keeps transfer within the same channel-prefix family unless you explicitly allow cross-prefix pairs.

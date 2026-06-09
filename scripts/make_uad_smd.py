@@ -388,6 +388,9 @@ def build_metadata(
         "protocol_version": 2,
         "split_mode": split_mode,
         "shift_level": shift_level,
+        "source_entity": source_dir.name,
+        "target_entity": target_dir.name,
+        "same_entity": bool(source_dir.resolve() == target_dir.resolve()),
         "source_machine": source_dir.name,
         "target_machine": target_dir.name,
         "same_machine": bool(source_dir.resolve() == target_dir.resolve()),
@@ -417,8 +420,8 @@ def build_metadata(
             "source_vs_test": split["shift_test"],
         },
         "notes": (
-            "No synthetic data was created. train_normal comes from source.npz of the source machine, "
-            "while target_pool/val/test are contiguous windows from target.npz of the target machine."
+            "No synthetic data was created. train_normal comes from source.npz of the source entity, "
+            "while target_pool/val/test are contiguous windows from target.npz of the target entity."
         ),
     }
 
@@ -523,8 +526,8 @@ def create_dataset(args):
         json.dump(metadata, f, indent=2)
 
     print("[DONE] Created experiment dataset:")
-    print(f"  source machine       : {source_dir.name}")
-    print(f"  target machine       : {target_dir.name}")
+    print(f"  source entity        : {source_dir.name}")
+    print(f"  target entity        : {target_dir.name}")
     print(f"  out_dir              : {out_dir}")
     print(f"  train_normal         : X={X_train.shape} y=(all 0)")
     print(

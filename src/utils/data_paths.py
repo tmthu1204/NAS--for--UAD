@@ -39,12 +39,53 @@ def _candidate_paths(raw_root: str | Path | None):
             yield item
 
 
+def _candidate_smap_paths(raw_root: str | Path | None):
+    proj = project_root()
+    seen: set[str] = set()
+
+    def _push(path_like):
+        if path_like is None:
+            return
+        p = Path(path_like)
+        variants = [p] if p.is_absolute() else [proj / p, p]
+        for item in variants:
+            try:
+                key = str(item.resolve(strict=False))
+            except Exception:
+                key = str(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            yield item
+
+    if raw_root is not None:
+        for item in _push(raw_root):
+            yield item
+
+    for fallback in (
+        "data/SMAP_MSL",
+        "external/tranad_upstream/data/SMAP_MSL",
+        "external/OmniAnomaly/data",
+    ):
+        for item in _push(fallback):
+            yield item
+
+
 def has_raw_smd_layout(path: str | Path) -> bool:
     root = Path(path)
     return (
         (root / "train").exists()
         and (root / "test").exists()
         and ((root / "test_label").exists() or (root / "labels").exists())
+    )
+
+
+def has_raw_smap_layout(path: str | Path) -> bool:
+    root = Path(path)
+    return (
+        (root / "train").exists()
+        and (root / "test").exists()
+        and (root / "labeled_anomalies.csv").exists()
     )
 
 
@@ -55,6 +96,15 @@ def resolve_raw_smd_root(raw_root: str | Path | None = None) -> Path:
     if raw_root is not None:
         return Path(raw_root)
     return project_root() / "data" / "ServerMachineDataset"
+
+
+def resolve_raw_smap_root(raw_root: str | Path | None = None) -> Path:
+    for candidate in _candidate_smap_paths(raw_root):
+        if candidate.exists() and has_raw_smap_layout(candidate):
+            return candidate.resolve()
+    if raw_root is not None:
+        return Path(raw_root)
+    return project_root() / "data" / "SMAP_MSL"
 
 
 def resolve_smd_label_dir(raw_root: str | Path) -> Path:

@@ -4,7 +4,7 @@ Top-level orchestrator (UAD project):
 - TS-TCC pretrain
 - (Mode A) adaptnas_combined:
     * input: train_normal.npz, target_pool_unlabeled.npz, val_mixed.npz, test_mixed.npz
-    * SVDD-weighting on TARGET POOL using SVDD fitted on SOURCE normal (train_normal)
+    * one-class weighting on TARGET POOL using a backend fitted on SOURCE normal
     * bilevel AdaptNAS search with:
         - lower level on source normal + unlabeled weighted target pool
         - upper level on source holdout normal + unlabeled weighted target pool
@@ -13,15 +13,17 @@ Top-level orchestrator (UAD project):
 
 - (Mode B) uad_source:
     * input: train_normal.npz, val_mixed.npz[, test_mixed.npz]
-    * search: choose arch by SVDD objective on source normal only
-        - objective = mean(dist2) on held-out normal (dist2 on candidate forward_features)
-        - SVDD training uses soft-boundary with warmup epochs (same as combined style: dist2)
-    * final: fit SVDD on full train_normal, score val/test by dist2, report AUROC/AP/event-F1/POT
+    * search: choose arch by one-class objective on source normal only
+        - objective = mean(one-class score) on held-out normal features
+    * final: fit the selected one-class backend on full train_normal features,
+      score val/test, and report AUROC/AP/event-F1/POT
 
 Notes:
 - For UAD metrics we assume labels are binary {0,1}. If labels are multiclass, we binarize by y>0 -> 1.
 - In this UAD project we set num_classes=2 for CandidateModel.
 - TS-TCC is used to initialize candidate encoders before search/final training.
+- The default backend is `deepsvdd`; `autoencoder`, `knn_distance`, `oneclass_svm`,
+  `svdd`, `prototype_oneclass`, and `mahalanobis_head` are also supported.
 """
 
 import argparse
@@ -76,7 +78,12 @@ from src.models.tscnn import EncoderCNN
 from src.models.transformer import ARTransformer
 from src.models.classifier import MLP
 from src.models.discriminator import DomainDiscriminator
-from src.models.deepsvdd import DeepSVDD
+from src.oneclass import (
+    OneClassConfig,
+    build_oneclass_backend,
+    get_oneclass_score_name,
+    list_oneclass_methods,
+)
 from src.utils.data_paths import resolve_raw_smd_root
 
 from src.utils.metrics import (
@@ -148,12 +155,14 @@ def fix_length(X, window=128):
     return np.stack(X_fixed, axis=0)
 
 
-def load_all_smd_for_pretrain(root_dir="data/smd", window=128):
+def load_all_cached_entities_for_pretrain(root_dir="data/smd", window=128):
     import glob
     all_X = []
-    n_machines = 0
+    n_entities = 0
 
-    for mdir in sorted(glob.glob(os.path.join(root_dir, "machine-*"))):
+    for mdir in sorted(glob.glob(os.path.join(root_dir, "*"))):
+        if not os.path.isdir(mdir):
+            continue
         used_any = False
         for fname in ["source.npz", "target.npz"]:
             npz_path = os.path.join(mdir, fname)
@@ -164,13 +173,33 @@ def load_all_smd_for_pretrain(root_dir="data/smd", window=128):
             all_X.append(Xm)
             used_any = True
         if used_any:
-            n_machines += 1
+            n_entities += 1
 
     if not all_X:
-        raise RuntimeError(f"No SMD source/target npz found under {root_dir}")
+        raise RuntimeError(f"No cached source/target npz found under {root_dir}")
     X_all = np.concatenate(all_X, axis=0)
-    print(f"[INFO] Multi-machine TS-TCC pretrain: {X_all.shape[0]} windows from {n_machines} machines.")
+    print(f"[INFO] Multi-entity TS-TCC pretrain: {X_all.shape[0]} windows from {n_entities} entities.")
     return X_all
+
+
+def infer_cached_pretrain_root(npz_path: str):
+    machine_dir = os.path.dirname(npz_path)
+    parent_dir = os.path.dirname(machine_dir)
+    parent_name = os.path.basename(parent_dir).lower()
+
+    if parent_name in {"smd", "smap", "msl"}:
+        return parent_dir
+
+    if parent_name.startswith("temporal_") or parent_name.startswith("cross_"):
+        experiments_root = os.path.dirname(parent_dir)
+        experiments_name = os.path.basename(experiments_root).lower()
+        suffix = "_experiments"
+        if experiments_name.endswith(suffix):
+            dataset_name = experiments_name[: -len(suffix)]
+            if dataset_name:
+                return os.path.join(os.path.dirname(experiments_root), dataset_name)
+
+    return None
 
 
 def build_validation(ds_source, ds_target, beta=0.5, m=200, bs=64, seed=42, fixed_s_idx=None):
@@ -480,37 +509,62 @@ def warmup_candidate_on_source(cand, ds_source, device, steps=50, bs=64, lr=1e-3
         opt.step()
 
 
-def fit_deepsvdd_on_features(
-    Zs_np, device,
-    hidden_dim=128, rep_dim=64, nu=0.05,
-    epochs=10, warmup_epochs=2, lr=1e-3, bs=1024, seed=42
-):
-    torch.manual_seed(seed)
-    Zs = torch.tensor(Zs_np, dtype=torch.float32, device=device)
+def normalize_optional_limit(max_fit):
+    if max_fit is None:
+        return None
+    max_fit = int(max_fit)
+    return max_fit if max_fit > 0 else None
 
-    svdd = DeepSVDD(in_dim=Zs.shape[1], hidden_dim=hidden_dim, rep_dim=rep_dim).to(device)
-    svdd.init_center(Zs)
 
-    opt = torch.optim.Adam(svdd.parameters(), lr=lr)
-    n = Zs.shape[0]
+def build_oneclass_config(args, *, epochs=None, warmup_epochs=None, max_fit=None):
+    return OneClassConfig(
+        method=args.oneclass_method,
+        epochs=int(args.oneclass_epochs if epochs is None else epochs),
+        lr=float(args.oneclass_lr),
+        batch_size=int(args.oneclass_batch_size),
+        max_fit=normalize_optional_limit(args.oneclass_max_fit if max_fit is None else max_fit),
+        knn_k=int(args.knn_k),
+        ocsvm_nu=float(args.ocsvm_nu),
+        ocsvm_kernel=str(args.ocsvm_kernel),
+        ocsvm_gamma=str(args.ocsvm_gamma),
+        ocsvm_degree=int(args.ocsvm_degree),
+        ocsvm_coef0=float(args.ocsvm_coef0),
+        svdd_hidden_dim=int(args.svdd_hidden_dim),
+        svdd_rep_dim=int(args.svdd_rep_dim),
+        svdd_nu=float(args.svdd_nu),
+        svdd_warmup_epochs=int(args.svdd_warmup_epochs if warmup_epochs is None else warmup_epochs),
+        ae_hidden_dim=int(args.ae_hidden_dim),
+        ae_latent_dim=int(args.ae_latent_dim),
+        maha_hidden_dim=int(args.maha_hidden_dim),
+        maha_rep_dim=int(args.maha_rep_dim),
+        maha_shrinkage=float(args.maha_shrinkage),
+        gmm_hidden_dim=int(args.gmm_hidden_dim),
+        gmm_rep_dim=int(args.gmm_rep_dim),
+        gmm_components=int(args.gmm_components),
+        gmm_covariance_type=str(args.gmm_covariance_type),
+        gmm_reg_covar=float(args.gmm_reg_covar),
+        gmm_warmup_epochs=int(args.gmm_warmup_epochs),
+        proto_hidden_dim=int(args.proto_hidden_dim),
+        proto_rep_dim=int(args.proto_rep_dim),
+        proto_count=int(args.proto_count),
+        proto_separation_weight=float(args.proto_separation_weight),
+        proto_separation_margin=float(args.proto_separation_margin),
+    )
 
-    for ep in range(epochs):
-        svdd.train()
-        perm = torch.randperm(n, device=device)
-        for i in range(0, n, bs):
-            zb = Zs[perm[i:i+bs]]
-            if ep < warmup_epochs:
-                dist2 = svdd(zb)
-                loss = dist2.mean()
-            else:
-                loss, _, _ = svdd.loss_soft_boundary(zb, nu=nu)
 
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
+def subsample_array(X_np, max_items=None, seed=42):
+    max_items = normalize_optional_limit(max_items)
+    if max_items is None or len(X_np) <= max_items:
+        return X_np
+    idx = np.random.RandomState(seed).choice(len(X_np), size=max_items, replace=False)
+    return X_np[idx]
 
-    svdd.eval()
-    return svdd
+
+def fit_oneclass_on_features(Zs_np, device, oneclass_cfg: OneClassConfig, seed=42):
+    backend = build_oneclass_backend(in_dim=Zs_np.shape[1], config=oneclass_cfg)
+    backend.fit(Zs_np, device=device, seed=seed)
+    backend.eval()
+    return backend
 
 
 def robust_sigmoid_weights(raw, tau=1.0, w_min=0.05):
@@ -526,25 +580,16 @@ def robust_sigmoid_weights(raw, tau=1.0, w_min=0.05):
 
 
 @torch.no_grad()
-def score_candidate_svdd_stream(cand, svdd, X_np, device, batch_size=256, mode="dist2"):
+def score_candidate_oneclass_stream(cand, backend, X_np, device, batch_size=256):
     cand.eval()
-    svdd.eval()
+    backend.eval()
     scores = []
-    R2 = (svdd.R ** 2)
 
     dl = DataLoader(ArrayDataset(X_np), batch_size=batch_size, shuffle=False)
     for xb in dl:
         xb = xb.to(device)
         f = cand.forward_features(xb)  # [B, D]
-        dist2 = svdd(f)
-
-        if mode == "dist2":
-            sc = dist2
-        elif mode == "dist2_minus_R2":
-            sc = dist2 - R2
-        else:
-            sc = torch.relu(dist2 - R2)
-
+        sc = backend.score_tensor(f)
         scores.append(sc.detach().cpu().numpy())
 
     return np.concatenate(scores, axis=0)
@@ -668,13 +713,20 @@ def run_final_only_option2(
 ):
     """
     FINAL-ONLY for combined mode:
-      warmup on source -> freeze -> SVDD on forward_features (fit on source normal)
+      warmup on source -> freeze -> one-class model on forward_features (fit on source normal)
       -> weights on target_pool_unlabeled -> unlabeled bilevel final
-      -> fit SVDD on adapted source features -> eval on X_eval/Y_eval (test if provided else val)
+      -> fit one-class model on adapted source features -> eval on X_eval/Y_eval (test if provided else val)
     """
-    svdd_epochs = 10
-    svdd_warmup_epochs = 2
-    svdd_nu = 0.05
+    weighting_cfg = build_oneclass_config(
+        args,
+        epochs=args.oneclass_epochs,
+        warmup_epochs=args.svdd_warmup_epochs,
+    )
+    final_cfg = build_oneclass_config(
+        args,
+        epochs=args.oneclass_final_epochs,
+        warmup_epochs=args.svdd_final_warmup_epochs,
+    )
     tau = 1.0
     w_min = 0.05
 
@@ -683,27 +735,33 @@ def run_final_only_option2(
 
     ds_source = ArrayDataset(Xs, Ys)
 
-    warmup_candidate_on_source(model, ds_source, device=device, steps=80, bs=args.batch_size, lr=1e-3)
-
-    _set_requires_grad(model, False)
-    if len(Xs) > 5000:
-        idx_fit = np.random.RandomState(seed).choice(len(Xs), size=5000, replace=False)
-        Xs_fit = Xs[idx_fit]
-    else:
-        Xs_fit = Xs
-
-    Fs = extract_candidate_features(model, Xs_fit, device=device, batch_size=256)
-    svdd = fit_deepsvdd_on_features(
-        Fs, device=device, hidden_dim=128, rep_dim=64, nu=svdd_nu,
-        epochs=svdd_epochs, warmup_epochs=svdd_warmup_epochs, lr=1e-3, bs=1024, seed=seed
+    warmup_candidate_on_source(
+        model,
+        ds_source,
+        device=device,
+        steps=args.combined_final_candidate_warmup_steps,
+        bs=args.batch_size,
+        lr=1e-3,
     )
 
-    raw = score_candidate_svdd_stream(model, svdd, X_target_pool, device=device, batch_size=256, mode="dist2")
+    _set_requires_grad(model, False)
+    Xs_fit = subsample_array(Xs, weighting_cfg.max_fit, seed=seed)
+    Fs = extract_candidate_features(model, Xs_fit, device=device, batch_size=256)
+    weighting_backend = fit_oneclass_on_features(Fs, device=device, oneclass_cfg=weighting_cfg, seed=seed)
+
+    raw = score_candidate_oneclass_stream(
+        model,
+        weighting_backend,
+        X_target_pool,
+        device=device,
+        batch_size=256,
+    )
     w_ent = robust_sigmoid_weights(raw, tau=tau, w_min=w_min)
 
     print(
         f"[FINAL-ONLY][{arch_name}] weights: mean={w_ent.mean():.4f} "
-        f"min={w_ent.min():.4f} max={w_ent.max():.4f} | tau={tau} w_min={w_min} nu={svdd_nu}"
+        f"min={w_ent.min():.4f} max={w_ent.max():.4f} | "
+        f"tau={tau} w_min={w_min} method={weighting_cfg.method} score={weighting_backend.score_name}"
     )
 
     _set_requires_grad(model, True)
@@ -718,7 +776,7 @@ def run_final_only_option2(
     train_log = train_bilevel(
         model, ds_source, ds_target, None,
         device=device,
-        steps=200,
+        steps=args.combined_final_steps,
         bs=args.batch_size,
         alpha=alpha_final,
         gamma=1.0,
@@ -726,7 +784,7 @@ def run_final_only_option2(
         lr_arch=1e-3,
         use_cosine_decay=True,
         early_stop=True,
-        patience=10,
+        patience=args.combined_final_patience,
         ckpt_path=os.path.join(out_dir, "checkpoints", f"{arch_name}_final_best.pt"),
         upper_source_loader=upper_src_loader,
         upper_target_loader=upper_tgt_loader,
@@ -734,16 +792,15 @@ def run_final_only_option2(
     )
 
     metrics_uad = None
+    final_backend_info = None
     if X_eval is not None and Y_eval is not None:
-        scores, train_scores = fit_final_svdd_and_score(
+        scores, train_scores, final_backend_info = fit_final_oneclass_and_score(
             model,
             X_train_norm=Xs,
             X_eval=X_eval,
             device=device,
-            svdd_epochs=20,
-            svdd_warmup_epochs=5,
-            svdd_nu=0.05,
-            max_fit=5000,
+            oneclass_cfg=final_cfg,
+            seed=seed,
         )
         ap, auroc = compute_ap_auroc(Y_eval, scores)
 
@@ -778,100 +835,83 @@ def run_final_only_option2(
         "arch": str(arch_cfg),
         "metrics_uad": metrics_uad,
         "train_curves": train_log,
+        "oneclass": {
+            "method": args.oneclass_method,
+            "weighting_backend": weighting_backend.summary(),
+            "final_backend": final_backend_info,
+        },
         "weighting": {
-            "option": "option2_svdd_on_forward_features",
+            "option": "option2_oneclass_on_forward_features",
+            "method": args.oneclass_method,
+            "score_name": weighting_backend.score_name,
             "tau": float(tau),
             "w_min": float(w_min),
-            "svdd_nu": float(svdd_nu),
-            "svdd_epochs": int(svdd_epochs),
-            "svdd_warmup_epochs": int(svdd_warmup_epochs),
+            "config": weighting_cfg.to_dict(),
         }
     }
 
 
-# ---------------- UAD-SOURCE: SVDD objective search (dist2 only) ----------------
-def svdd_objective_on_source_normal(
+# ---------------- UAD-SOURCE: one-class objective search ----------------
+def oneclass_objective_on_source_normal(
     cand,
     X_train_norm,
     X_val_norm,
     device,
-    svdd_epochs=10,
-    svdd_warmup_epochs=2,
-    svdd_nu=0.05,
-    max_fit=5000,
+    oneclass_cfg: OneClassConfig,
     seed=42,
 ):
     """
     Objective to MINIMIZE:
-      - fit SVDD on train normal features (candidate forward_features)
-      - compute mean(dist2) on val normal
-    This matches "dist2 on candidate features" style used in combined.
+      - fit one-class model on train normal features (candidate forward_features)
+      - compute mean(score) on val normal
+    Higher score means more anomalous, so lower mean score means tighter normal compactness.
     """
     _set_requires_grad(cand, False)
     cand.eval()
 
-    if max_fit is not None and len(X_train_norm) > max_fit:
-        idx_fit = np.random.RandomState(seed).choice(len(X_train_norm), size=max_fit, replace=False)
-        X_fit = X_train_norm[idx_fit]
-    else:
-        X_fit = X_train_norm
-
+    X_fit = subsample_array(X_train_norm, oneclass_cfg.max_fit, seed=seed)
     F_fit = extract_candidate_features(cand, X_fit, device=device, batch_size=256)
-    svdd = fit_deepsvdd_on_features(
-        F_fit, device=device,
-        hidden_dim=128, rep_dim=64,
-        nu=svdd_nu,
-        epochs=svdd_epochs,
-        warmup_epochs=svdd_warmup_epochs,
-        lr=1e-3, bs=1024, seed=seed
-    )
+    backend = fit_oneclass_on_features(F_fit, device=device, oneclass_cfg=oneclass_cfg, seed=seed)
 
     F_val = extract_candidate_features(cand, X_val_norm, device=device, batch_size=256)
     with torch.no_grad():
-        dist2 = svdd(torch.tensor(F_val, dtype=torch.float32, device=device)).detach().cpu().numpy()
+        score_vals = backend.score_tensor(
+            torch.tensor(F_val, dtype=torch.float32, device=device)
+        ).detach().cpu().numpy()
 
-    obj = float(dist2.mean())
-    info = {"mean_dist2": float(dist2.mean())}
+    obj = float(score_vals.mean())
+    info = {
+        "mean_score": obj,
+        "score_name": backend.score_name,
+        "oneclass": backend.summary(),
+    }
+    if backend.method_name == "deepsvdd":
+        info["mean_dist2"] = obj
     return obj, info
 
 
-def fit_final_svdd_and_score(
+def fit_final_oneclass_and_score(
     cand,
     X_train_norm,
     X_eval,
     device,
-    svdd_epochs=20,
-    svdd_warmup_epochs=5,
-    svdd_nu=0.05,
-    max_fit=5000,
+    oneclass_cfg: OneClassConfig,
     seed=42,
 ):
     """
-    Fit SVDD on full train normal-only features, then score eval data by dist2.
+    Fit one-class model on full train normal-only features, then score eval data.
     Returns: scores_eval (np.ndarray), scores_train_norm (np.ndarray)
     """
     cand.eval()
     _set_requires_grad(cand, False)
 
-    if max_fit is not None and len(X_train_norm) > max_fit:
-        idx_fit = np.random.RandomState(seed).choice(len(X_train_norm), size=max_fit, replace=False)
-        X_fit = X_train_norm[idx_fit]
-    else:
-        X_fit = X_train_norm
-
+    X_fit = subsample_array(X_train_norm, oneclass_cfg.max_fit, seed=seed)
     F_fit = extract_candidate_features(cand, X_fit, device=device, batch_size=256)
-    svdd = fit_deepsvdd_on_features(
-        F_fit, device=device,
-        hidden_dim=128, rep_dim=64,
-        nu=svdd_nu,
-        epochs=svdd_epochs,
-        warmup_epochs=svdd_warmup_epochs,
-        lr=1e-3, bs=1024, seed=seed
-    )
+    backend = fit_oneclass_on_features(F_fit, device=device, oneclass_cfg=oneclass_cfg, seed=seed)
 
-    scores_train = score_candidate_svdd_stream(cand, svdd, X_train_norm, device=device, batch_size=256, mode="dist2")
-    scores_eval = score_candidate_svdd_stream(cand, svdd, X_eval, device=device, batch_size=256, mode="dist2")
-    return scores_eval, scores_train
+    scores_train = score_candidate_oneclass_stream(cand, backend, X_train_norm, device=device, batch_size=256)
+    scores_eval = score_candidate_oneclass_stream(cand, backend, X_eval, device=device, batch_size=256)
+    return scores_eval, scores_train, backend.summary()
 
 
 _OMNI_PAPER_LOW_QUANTILES = {
@@ -1910,8 +1950,8 @@ def main():
         default="adaptnas_combined",
         choices=["adaptnas_combined", "uad_source"],
         help=(
-            "adaptnas_combined: UAD input, SVDD-weighted target + bilevel AdaptNAS + final-only baselines.\n"
-            "uad_source: UAD input, source-only (train_normal) SVDD objective NAS; final DeepSVDD scoring."
+            "adaptnas_combined: UAD input, one-class-weighted target + bilevel AdaptNAS + final-only baselines.\n"
+            "uad_source: UAD input, source-only (train_normal) one-class objective NAS; final one-class scoring."
         ),
     )
     parser.add_argument(
@@ -1920,12 +1960,57 @@ def main():
         default="default_nasade",
         choices=["default_nasade", "omni_anomaly", "usad", "tranad"],
         help=(
-            "default_nasade: current CNN/Transformer-GRU-TCN + TS-TCC/SVDD pipeline.\n"
+            "default_nasade: current CNN/Transformer-GRU-TCN + TS-TCC + pluggable one-class pipeline.\n"
             "omni_anomaly: paper-faithful OmniAnomaly family for raw SMD source-only runs.\n"
             "usad: paper-style USAD family for raw SWaT source-only runs.\n"
             "tranad: upstream-faithful TranAD family for raw SMD source-only runs."
         ),
     )
+    parser.add_argument(
+        "--oneclass_method",
+        type=str,
+        default="deepsvdd",
+        choices=list_oneclass_methods(),
+        help="One-class backend for default_nasade feature scoring/weighting.",
+    )
+    parser.add_argument("--oneclass_epochs", type=int, default=10)
+    parser.add_argument("--oneclass_final_epochs", type=int, default=20)
+    parser.add_argument("--oneclass_lr", type=float, default=1e-3)
+    parser.add_argument("--oneclass_batch_size", type=int, default=1024)
+    parser.add_argument("--oneclass_max_fit", type=int, default=5000)
+    parser.add_argument("--knn_k", type=int, default=5)
+    parser.add_argument("--ocsvm_nu", type=float, default=0.05)
+    parser.add_argument("--ocsvm_kernel", type=str, default="rbf", choices=["linear", "rbf", "poly", "sigmoid"])
+    parser.add_argument("--ocsvm_gamma", type=str, default="scale")
+    parser.add_argument("--ocsvm_degree", type=int, default=3)
+    parser.add_argument("--ocsvm_coef0", type=float, default=0.0)
+    parser.add_argument("--svdd_hidden_dim", type=int, default=128)
+    parser.add_argument("--svdd_rep_dim", type=int, default=64)
+    parser.add_argument("--svdd_nu", type=float, default=0.05)
+    parser.add_argument("--svdd_warmup_epochs", type=int, default=2)
+    parser.add_argument("--svdd_final_warmup_epochs", type=int, default=5)
+    parser.add_argument("--ae_hidden_dim", type=int, default=128)
+    parser.add_argument("--ae_latent_dim", type=int, default=64)
+    parser.add_argument("--maha_hidden_dim", type=int, default=128)
+    parser.add_argument("--maha_rep_dim", type=int, default=64)
+    parser.add_argument("--maha_shrinkage", type=float, default=1e-2)
+    parser.add_argument("--gmm_hidden_dim", type=int, default=128)
+    parser.add_argument("--gmm_rep_dim", type=int, default=64)
+    parser.add_argument("--gmm_components", type=int, default=3)
+    parser.add_argument("--gmm_covariance_type", type=str, default="diag", choices=["diag", "full"])
+    parser.add_argument("--gmm_reg_covar", type=float, default=1e-4)
+    parser.add_argument("--gmm_warmup_epochs", type=int, default=2)
+    parser.add_argument("--proto_hidden_dim", type=int, default=128)
+    parser.add_argument("--proto_rep_dim", type=int, default=64)
+    parser.add_argument("--proto_count", type=int, default=4)
+    parser.add_argument("--proto_separation_weight", type=float, default=0.1)
+    parser.add_argument("--proto_separation_margin", type=float, default=1.0)
+    parser.add_argument("--nas_search_iters", type=int, default=3)
+    parser.add_argument("--combined_search_candidate_warmup_steps", type=int, default=50)
+    parser.add_argument("--combined_search_steps", type=int, default=80)
+    parser.add_argument("--combined_final_candidate_warmup_steps", type=int, default=80)
+    parser.add_argument("--combined_final_steps", type=int, default=200)
+    parser.add_argument("--combined_final_patience", type=int, default=10)
     parser.add_argument("--omni_epochs", type=int, default=20)
     parser.add_argument("--omni_final_epochs", type=int, default=20)
     parser.add_argument("--omni_lr", type=float, default=1e-3)
@@ -2143,45 +2228,20 @@ def main():
     from src.ts_tcc.dataloader.dataloader import Load_Dataset
 
     print("[INFO] TS-TCC pretraining ...")
-    config = Config()
-    config.input_channels = in_ch
-    if hasattr(config, "input_length"):
-        config.input_length = 128
-    if hasattr(config, "num_classes"):
-        config.num_classes = num_classes
-    config.batch_size = args.batch_size
-    config.num_epoch = args.epochs_pretrain
-
-    model = base_Model(config).to(device)
-    temporal_contr_model = TC(config, device).to(device)
-    model_opt = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=3e-4)
-    temp_opt = torch.optim.Adam(temporal_contr_model.parameters(), lr=config.lr, weight_decay=3e-4)
-    tstcc = TSTrainer(model, temporal_contr_model, model_opt, temp_opt, device, config)
-
     # pretrain data:
-    # - combined: if SMD machine path detected, can pretrain multi-machine; else pretrain on train_normal + val_mixed
-    # - uad_source: pretrain on train_normal only (as you wanted)
+    # - combined: if cached SMD/SMAP entity path detected, can pretrain multi-entity; else pretrain on train_normal + target_pool
+    # - uad_source: pretrain on train_normal only
     X_pretrain_multi = None
+    pretrain_multi_name = None
     norm_path = parts[0].replace("\\", "/")
-    if "machine-" in norm_path:
-        machine_dir = os.path.dirname(parts[0])
-        parent_dir = os.path.dirname(machine_dir)
-        parent_name = os.path.basename(parent_dir).lower()
-
-        candidate_roots = []
-        if parent_name == "smd":
-            candidate_roots.append(parent_dir)
-        elif parent_name.startswith("temporal_") or parent_name.startswith("cross_machine_"):
-            smd_root = os.path.join(os.path.dirname(parent_dir), "smd")
-            candidate_roots.append(smd_root)
-
-        for smd_root in candidate_roots:
-            if os.path.isdir(smd_root):
-                try:
-                    X_pretrain_multi = load_all_smd_for_pretrain(smd_root, window=128)
-                    break
-                except RuntimeError:
-                    X_pretrain_multi = None
+    candidate_root = infer_cached_pretrain_root(norm_path)
+    if candidate_root and os.path.isdir(candidate_root):
+        try:
+            X_pretrain_multi = load_all_cached_entities_for_pretrain(candidate_root, window=128)
+            pretrain_multi_name = os.path.basename(candidate_root)
+        except RuntimeError:
+            X_pretrain_multi = None
+            pretrain_multi_name = None
 
     if args.mode == "uad_source":
         train_x = X_train_norm
@@ -2189,7 +2249,8 @@ def main():
     else:
         if X_pretrain_multi is not None:
             train_x = X_pretrain_multi
-            print(f"[INFO] TS-TCC pretraining on multi-machine SMD: {train_x.shape[0]} windows.")
+            label = pretrain_multi_name if pretrain_multi_name is not None else "cached entities"
+            print(f"[INFO] TS-TCC pretraining on multi-entity {label}: {train_x.shape[0]} windows.")
         else:
             pretrain_parts = [X_train_norm]
             pretrain_names = ["train_normal"]
@@ -2206,20 +2267,63 @@ def main():
         "samples": torch.tensor(train_x, dtype=torch.float32),
         "labels": torch.zeros(len(train_x)),
     }
+    if len(train_x) < 2:
+        raise ValueError(
+            "TS-TCC pretraining requires at least 2 windows; "
+            f"got {len(train_x)} from the current source/target setup."
+        )
+
+    config = Config()
+    config.input_channels = in_ch
+    if hasattr(config, "input_length"):
+        config.input_length = 128
+    if hasattr(config, "num_classes"):
+        config.num_classes = num_classes
+    ssl_batch_size = max(2, min(int(args.batch_size), int(len(train_x))))
+    if ssl_batch_size != int(args.batch_size):
+        print(
+            f"[INFO] Adjusting TS-TCC self-supervised batch size "
+            f"from {args.batch_size} to {ssl_batch_size} for {len(train_x)} windows."
+        )
+    config.batch_size = ssl_batch_size
+    config.num_epoch = args.epochs_pretrain
+
+    model = base_Model(config).to(device)
+    temporal_contr_model = TC(config, device).to(device)
+    model_opt = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=3e-4)
+    temp_opt = torch.optim.Adam(temporal_contr_model.parameters(), lr=config.lr, weight_decay=3e-4)
+    tstcc = TSTrainer(model, temporal_contr_model, model_opt, temp_opt, device, config)
+
     train_dataset = Load_Dataset(train_ss, config, training_mode="self_supervised")
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=ssl_batch_size,
+        shuffle=True,
+        drop_last=True,
+    )
     tstcc.train(train_dl=train_loader, training_mode="self_supervised")
 
     tstcc_backbone = model
     tstcc_backbone.eval()
 
     # -------- Stage 2-4: Search --------
-    N_ITERS = 3
+    N_ITERS = max(1, int(args.nas_search_iters))
     history = []
     best_arch = None
+    search_oneclass_cfg = build_oneclass_config(
+        args,
+        epochs=args.oneclass_epochs,
+        warmup_epochs=args.svdd_warmup_epochs,
+    )
+    final_oneclass_cfg = build_oneclass_config(
+        args,
+        epochs=args.oneclass_final_epochs,
+        warmup_epochs=args.svdd_final_warmup_epochs,
+    )
+    oneclass_score_name = get_oneclass_score_name(args.oneclass_method)
 
     if args.mode == "uad_source":
-        # split train_normal into train/val-normal for SVDD objective selection
+        # split train_normal into train/val-normal for one-class objective selection
         rng = np.random.RandomState(args.seed)
         perm = rng.permutation(len(X_train_norm))
         n_val = max(50, int(0.2 * len(X_train_norm))) if len(X_train_norm) >= 250 else max(1, int(0.2 * len(X_train_norm)))
@@ -2232,38 +2336,43 @@ def main():
         best_obj = float("inf")
         best_state = None
 
-        svdd_epochs = 10
-        svdd_warmup_epochs = 2
-        svdd_nu = 0.05
-
         for iter_id in range(N_ITERS):
-            print(f"\n[ITER {iter_id+1}/{N_ITERS}] UAD_SOURCE search: SVDD objective on train_normal...")
+            print(
+                f"\n[ITER {iter_id+1}/{N_ITERS}] UAD_SOURCE search: "
+                f"{args.oneclass_method} objective on train_normal..."
+            )
 
             for i in range(args.search_candidates):
                 arch_c = sample_arch()
                 cand = CandidateModel(in_ch, arch_c, num_classes=2).to(device)
                 initialize_candidate_from_tstcc(cand, tstcc_backbone)
 
-                obj, info = svdd_objective_on_source_normal(
+                obj, info = oneclass_objective_on_source_normal(
                     cand,
                     X_train_norm=Xs_tr,
                     X_val_norm=Xs_val,
                     device=device,
-                    svdd_epochs=svdd_epochs,
-                    svdd_warmup_epochs=svdd_warmup_epochs,
-                    svdd_nu=svdd_nu,
-                    max_fit=5000,
+                    oneclass_cfg=search_oneclass_cfg,
                     seed=args.seed,
                 )
 
-                history.append({
+                entry = {
                     "iter": iter_id + 1,
                     "arch": str(arch_c),
-                    "svdd_obj": float(obj),
-                    "svdd_mean_dist2": float(info["mean_dist2"]),
-                })
+                    "oneclass_method": args.oneclass_method,
+                    "oneclass_score_name": info["score_name"],
+                    "oneclass_obj": float(obj),
+                    "oneclass_mean_score": float(info["mean_score"]),
+                }
+                if args.oneclass_method == "deepsvdd":
+                    entry["svdd_obj"] = float(obj)
+                    entry["svdd_mean_dist2"] = float(info["mean_score"])
+                history.append(entry)
 
-                print(f"  Candidate {i+1}/{args.search_candidates}: obj(mean_dist2)={obj:.6f}")
+                print(
+                    f"  Candidate {i+1}/{args.search_candidates}: "
+                    f"obj(mean_{info['score_name']})={obj:.6f}"
+                )
 
                 if obj < best_obj:
                     best_obj = float(obj)
@@ -2290,15 +2399,14 @@ def main():
         best_overall_iter = None
         best_overall_cand_state = None
 
-        svdd_epochs = 10
-        svdd_warmup_epochs = 2
-        svdd_nu = 0.05
         tau = 1.0
         w_min = 0.05
-        max_svdd_fit = 5000
 
         for iter_id in range(N_ITERS):
-            print(f"\n[ITER {iter_id+1}/{N_ITERS}] ADAPTNAS_COMBINED: SVDD-weighting + bilevel search...")
+            print(
+                f"\n[ITER {iter_id+1}/{N_ITERS}] ADAPTNAS_COMBINED: "
+                f"{args.oneclass_method}-weighting + bilevel search..."
+            )
 
             ds_source = ArrayDataset(Xs, Ys)
             best_iter_upper_obj = float("inf")
@@ -2313,31 +2421,40 @@ def main():
                 alpha_iter = 0.3 + 0.2 * iter_id
 
                 # warmup on source normal-only labels (0) to stabilize feature extraction
-                warmup_candidate_on_source(cand, ds_source, device=device, steps=50, bs=args.batch_size, lr=1e-3)
-
-                # fit SVDD on candidate features from source normal
-                _set_requires_grad(cand, False)
-
-                if max_svdd_fit is not None and len(Xs) > max_svdd_fit:
-                    idx_fit = np.random.RandomState(args.seed).choice(len(Xs), size=max_svdd_fit, replace=False)
-                    Xs_fit = Xs[idx_fit]
-                else:
-                    Xs_fit = Xs
-
-                Fs = extract_candidate_features(cand, Xs_fit, device=device, batch_size=256)
-                svdd = fit_deepsvdd_on_features(
-                    Fs, device=device,
-                    hidden_dim=128, rep_dim=64,
-                    nu=svdd_nu,
-                    epochs=svdd_epochs,
-                    warmup_epochs=svdd_warmup_epochs,
-                    lr=1e-3, bs=1024, seed=args.seed
+                warmup_candidate_on_source(
+                    cand,
+                    ds_source,
+                    device=device,
+                    steps=args.combined_search_candidate_warmup_steps,
+                    bs=args.batch_size,
+                    lr=1e-3,
                 )
 
-                raw = score_candidate_svdd_stream(cand, svdd, Xt_train, device=device, batch_size=256, mode="dist2")
+                # Fit one-class backend on candidate features from source normal.
+                _set_requires_grad(cand, False)
+                Xs_fit = subsample_array(Xs, search_oneclass_cfg.max_fit, seed=args.seed)
+                Fs = extract_candidate_features(cand, Xs_fit, device=device, batch_size=256)
+                oneclass_backend = fit_oneclass_on_features(
+                    Fs,
+                    device=device,
+                    oneclass_cfg=search_oneclass_cfg,
+                    seed=args.seed,
+                )
+
+                raw = score_candidate_oneclass_stream(
+                    cand,
+                    oneclass_backend,
+                    Xt_train,
+                    device=device,
+                    batch_size=256,
+                )
                 w_ent = robust_sigmoid_weights(raw, tau=tau, w_min=w_min)
 
-                print(f"    [W] w_ent stats: mean={w_ent.mean():.4f} min={w_ent.min():.4f} max={w_ent.max():.4f}")
+                print(
+                    f"    [W] w_ent stats: mean={w_ent.mean():.4f} "
+                    f"min={w_ent.min():.4f} max={w_ent.max():.4f} "
+                    f"| score={oneclass_backend.score_name}"
+                )
 
                 # bilevel training
                 _set_requires_grad(cand, True)
@@ -2351,7 +2468,7 @@ def main():
                 train_bilevel(
                     cand, ds_source, ds_target, None,
                     device=device,
-                    steps=80,
+                    steps=args.combined_search_steps,
                     bs=args.batch_size,
                     alpha=alpha_iter,
                     gamma=1.0,
@@ -2378,9 +2495,11 @@ def main():
                 )
                 upper_obj = float(stats["upper_obj"])
 
-                history.append({
+                entry = {
                     "iter": iter_id + 1,
                     "arch": str(arch_c),
+                    "oneclass_method": args.oneclass_method,
+                    "oneclass_score_name": oneclass_backend.score_name,
                     "upper_obj": float(upper_obj),
                     "src_obj": float(stats["src_obj"]),
                     "tgt_obj": float(stats["tgt_obj"]),
@@ -2388,8 +2507,10 @@ def main():
                     "alpha": float(alpha_iter),
                     "tau": float(tau),
                     "w_min": float(w_min),
-                    "svdd_nu": float(svdd_nu),
-                })
+                }
+                if args.oneclass_method == "deepsvdd":
+                    entry["svdd_nu"] = float(args.svdd_nu)
+                history.append(entry)
 
                 print(
                     f"  Candidate {i+1}/{args.search_candidates}: upper_obj={upper_obj:.6f} "
@@ -2423,31 +2544,40 @@ def main():
 
     res = {
         "mode": args.mode,
+        "family": args.family,
         "best_arch": str(best_arch),
         "search_history": history,
         "eval_split": eval_name,
         "has_separate_target_pool": bool(combined_has_separate_pool),
         "val_mixed_has_both_classes": bool(val_has_both_classes),
+        "oneclass": {
+            "method": args.oneclass_method,
+            "score_name": oneclass_score_name,
+            "search_config": search_oneclass_cfg.to_dict(),
+            "final_config": final_oneclass_cfg.to_dict(),
+        },
         "search_objective": (
-            "source_normal_svdd_compactness"
+            f"source_normal_oneclass_compactness(mean_{oneclass_score_name}; method={args.oneclass_method})"
             if args.mode == "uad_source"
-            else "unlabeled_bilevel_upper_obj(source_holdout_compactness + weighted_target_entropy + weighted_feature_gap)"
+            else (
+                "unlabeled_bilevel_upper_obj("
+                "source_holdout_compactness + weighted_target_entropy + weighted_feature_gap; "
+                f"target weights from {args.oneclass_method}:{oneclass_score_name})"
+            )
         ),
     }
 
     if args.mode == "uad_source":
-        # final: fit SVDD on full train_normal; score eval split
-        scores_eval, scores_train = fit_final_svdd_and_score(
+        # final: fit one-class backend on full train_normal; score eval split
+        scores_eval, scores_train, final_backend_info = fit_final_oneclass_and_score(
             best_cand,
             X_train_norm=X_train_norm,
             X_eval=X_eval,
             device=device,
-            svdd_epochs=20,
-            svdd_warmup_epochs=5,
-            svdd_nu=0.05,
-            max_fit=5000,
+            oneclass_cfg=final_oneclass_cfg,
             seed=args.seed,
         )
+        res["oneclass"]["final_backend"] = final_backend_info
 
         ap, auroc = compute_ap_auroc(y_eval, scores_eval)
 
@@ -2531,6 +2661,7 @@ def main():
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
         res["baselines_summary"] = {"best_by_auroc": best_by_auroc}
+        res["oneclass"]["selection"] = "best_by_auroc_from_final_only_baselines"
         if best_by_auroc is not None and best_by_auroc.get("metrics_uad") is not None:
             res["metrics_uad"] = best_by_auroc["metrics_uad"]
 

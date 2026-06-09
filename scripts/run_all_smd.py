@@ -169,6 +169,39 @@ def main():
     ap.add_argument("--epochs_pretrain", default="5")
     ap.add_argument("--search_candidates", default="5")
     ap.add_argument("--batch_size", default="64")
+    ap.add_argument("--oneclass_method", default="deepsvdd", choices=["deepsvdd", "autoencoder", "knn_distance", "oneclass_svm", "svdd", "prototype_oneclass", "mahalanobis_head", "gmm_head"])
+    ap.add_argument("--oneclass_epochs", default="10")
+    ap.add_argument("--oneclass_final_epochs", default="20")
+    ap.add_argument("--oneclass_lr", default="0.001")
+    ap.add_argument("--oneclass_batch_size", default="1024")
+    ap.add_argument("--oneclass_max_fit", default="5000")
+    ap.add_argument("--knn_k", default="5")
+    ap.add_argument("--ocsvm_nu", default="0.05")
+    ap.add_argument("--ocsvm_kernel", default="rbf", choices=["linear", "rbf", "poly", "sigmoid"])
+    ap.add_argument("--ocsvm_gamma", default="scale")
+    ap.add_argument("--ocsvm_degree", default="3")
+    ap.add_argument("--ocsvm_coef0", default="0.0")
+    ap.add_argument("--svdd_hidden_dim", default="128")
+    ap.add_argument("--svdd_rep_dim", default="64")
+    ap.add_argument("--svdd_nu", default="0.05")
+    ap.add_argument("--svdd_warmup_epochs", default="2")
+    ap.add_argument("--svdd_final_warmup_epochs", default="5")
+    ap.add_argument("--ae_hidden_dim", default="128")
+    ap.add_argument("--ae_latent_dim", default="64")
+    ap.add_argument("--maha_hidden_dim", default="128")
+    ap.add_argument("--maha_rep_dim", default="64")
+    ap.add_argument("--maha_shrinkage", default="0.01")
+    ap.add_argument("--gmm_hidden_dim", default="128")
+    ap.add_argument("--gmm_rep_dim", default="64")
+    ap.add_argument("--gmm_components", default="3")
+    ap.add_argument("--gmm_covariance_type", default="diag", choices=["diag", "full"])
+    ap.add_argument("--gmm_reg_covar", default="0.0001")
+    ap.add_argument("--gmm_warmup_epochs", default="2")
+    ap.add_argument("--proto_hidden_dim", default="128")
+    ap.add_argument("--proto_rep_dim", default="64")
+    ap.add_argument("--proto_count", default="4")
+    ap.add_argument("--proto_separation_weight", default="0.1")
+    ap.add_argument("--proto_separation_margin", default="1.0")
     ap.add_argument("--data_root", default=os.path.join(PROJ, "data", "smd"))
     ap.add_argument("--raw_smd_root", default=os.path.join(PROJ, "data", "ServerMachineDataset"))
     ap.add_argument("--machines", default="", help="Comma-separated machine ids for omni_anomaly, e.g. machine-1-1,machine-1-2")
@@ -203,6 +236,8 @@ def main():
     py = sys.executable
     ok, fail = [], []
     bench_name = f"{args.family}-{args.mode}"
+    if args.family == "default_nasade":
+        bench_name = f"{bench_name}-{args.oneclass_method}"
     if args.tag.strip():
         bench_name = f"{bench_name}-{args.tag.strip()}"
     bench_dir = os.path.join(BENCHMARKS, bench_name)
@@ -299,6 +334,11 @@ def main():
                 continue
 
             log_file = os.path.join(LOGS, f"{args.family}-{args.mode}-{machine}.txt")
+            if args.family == "default_nasade":
+                log_file = os.path.join(
+                    LOGS,
+                    f"{args.family}-{args.mode}-{args.oneclass_method}-{machine}.txt",
+                )
             cmd = [
                 py, "-m", "src.pipeline",
                 "--dataset_or_paths", ds_arg,
@@ -307,6 +347,39 @@ def main():
                 "--epochs_pretrain", args.epochs_pretrain,
                 "--search_candidates", args.search_candidates,
                 "--batch_size", args.batch_size,
+                "--oneclass_method", args.oneclass_method,
+                "--oneclass_epochs", args.oneclass_epochs,
+                "--oneclass_final_epochs", args.oneclass_final_epochs,
+                "--oneclass_lr", args.oneclass_lr,
+                "--oneclass_batch_size", args.oneclass_batch_size,
+                "--oneclass_max_fit", args.oneclass_max_fit,
+                "--knn_k", args.knn_k,
+                "--ocsvm_nu", args.ocsvm_nu,
+                "--ocsvm_kernel", args.ocsvm_kernel,
+                "--ocsvm_gamma", args.ocsvm_gamma,
+                "--ocsvm_degree", args.ocsvm_degree,
+                "--ocsvm_coef0", args.ocsvm_coef0,
+                "--svdd_hidden_dim", args.svdd_hidden_dim,
+                "--svdd_rep_dim", args.svdd_rep_dim,
+                "--svdd_nu", args.svdd_nu,
+                "--svdd_warmup_epochs", args.svdd_warmup_epochs,
+                "--svdd_final_warmup_epochs", args.svdd_final_warmup_epochs,
+                "--ae_hidden_dim", args.ae_hidden_dim,
+                "--ae_latent_dim", args.ae_latent_dim,
+                "--maha_hidden_dim", args.maha_hidden_dim,
+                "--maha_rep_dim", args.maha_rep_dim,
+                "--maha_shrinkage", args.maha_shrinkage,
+                "--gmm_hidden_dim", args.gmm_hidden_dim,
+                "--gmm_rep_dim", args.gmm_rep_dim,
+                "--gmm_components", args.gmm_components,
+                "--gmm_covariance_type", args.gmm_covariance_type,
+                "--gmm_reg_covar", args.gmm_reg_covar,
+                "--gmm_warmup_epochs", args.gmm_warmup_epochs,
+                "--proto_hidden_dim", args.proto_hidden_dim,
+                "--proto_rep_dim", args.proto_rep_dim,
+                "--proto_count", args.proto_count,
+                "--proto_separation_weight", args.proto_separation_weight,
+                "--proto_separation_margin", args.proto_separation_margin,
             ]
 
             rc = run_cmd(cmd, log_file)
