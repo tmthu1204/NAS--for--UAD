@@ -1,182 +1,220 @@
-HUONG DAN SU DUNG
+HƯỚNG DẪN SỬ DỤNG
 =================
 
-1. Bien dich / kiem tra source
-------------------------------
-Day la project Python nen khong can bien dich nhu C/C++/Java.
-De kiem tra nhanh loi cu phap, chay:
+1. Kiểm tra source
+------------------
+Dự án viết bằng Python nên không cần biên dịch như C/C++/Java. Để kiểm tra nhanh lỗi cú pháp, chạy:
 
-python -m py_compile src/pipeline.py scripts/run_manifest_benchmarks.py scripts/build_domain_shift_smd.py scripts/preprocess_smd.py
+python -m py_compile src/pipeline.py scripts/preprocess_smd.py scripts/preprocess_hai.py scripts/preprocess_exathlon.py scripts/pilot_rank_jepa_pad_cached.py scripts/build_pair_rule_common.py scripts/build_domain_shift_smd.py scripts/build_domain_shift_hai.py scripts/build_domain_shift_exathlon.py scripts/run_domain_shift_case_matrix.py scripts/run_manifest_benchmarks.py
 
-De xem cac tham so cua pipeline chinh:
+Để xem tham số pipeline chính:
 
 python -m src.pipeline --help
 
-2. Cach chay nhanh voi split .npz co san
-----------------------------------------
-Pipeline chinh la src.pipeline voi family default_nasade.
+2. Quy ước thí nghiệm chính
+---------------------------
+Các lệnh dưới đây dùng cấu hình full experiment để lấy kết quả chính, không phải smoke-test:
 
-2.1. Chay mode uad_source
+- Dataset: SMD, HAI, Exathlon.
+- Mode chạy tự động trong benchmark: `uad_source` và `adaptnas_combined`.
+- One-class learning backend: `deepsvdd`, `gmm_head`, `lof_head`.
+- NAS strategy: `evolutionary_guided`.
+- Rule chọn pair:
+  SMD và HAI dùng `cross_entity_paper_safe`.
+  Exathlon dùng `cross_entity_same_app_stable_adaptation_window`.
 
-Can 2 hoac 3 file:
-- train_normal.npz
-- val_mixed.npz
-- test_mixed.npz, tuy chon nhung nen co de bao cao ket qua test
+Nếu máy không có GPU, thay toàn bộ `--device cuda` thành `--device cpu`.
 
-Lenh mau CPU, cau hinh nho de smoke test:
-
-python -m src.pipeline ^
-  --family default_nasade ^
-  --mode uad_source ^
-  --dataset_or_paths "DUONG_DAN/train_normal.npz,DUONG_DAN/val_mixed.npz,DUONG_DAN/test_mixed.npz" ^
-  --device cpu ^
-  --epochs_pretrain 1 ^
-  --search_candidates 1 ^
-  --nas_search_iters 1 ^
-  --oneclass_method deepsvdd ^
-  --oneclass_epochs 1 ^
-  --oneclass_final_epochs 1
-
-2.2. Chay mode adaptnas_combined
-
-Can dung 4 file:
-- train_normal.npz
-- target_pool_unlabeled.npz
-- val_mixed.npz
-- test_mixed.npz
-
-Lenh mau CPU, cau hinh nho de smoke test:
-
-python -m src.pipeline ^
-  --family default_nasade ^
-  --mode adaptnas_combined ^
-  --dataset_or_paths "DUONG_DAN/train_normal.npz,DUONG_DAN/target_pool_unlabeled.npz,DUONG_DAN/val_mixed.npz,DUONG_DAN/test_mixed.npz" ^
-  --device cpu ^
-  --epochs_pretrain 1 ^
-  --search_candidates 1 ^
-  --nas_search_iters 1 ^
-  --nas_search_strategy evolutionary_guided ^
-  --oneclass_method deepsvdd ^
-  --weighting_oneclass_method deepsvdd ^
-  --final_oneclass_method deepsvdd ^
-  --oneclass_epochs 1 ^
-  --oneclass_final_epochs 1 ^
-  --combined_search_candidate_warmup_steps 1 ^
-  --combined_search_steps 5 ^
-  --combined_final_candidate_warmup_steps 1 ^
-  --combined_final_steps 5
-
-Neu co GPU CUDA, thay --device cpu bang --device cuda.
-
-3. Tao split va manifest tu SMD raw
------------------------------------
-Buoc 1: Tien xu ly raw SMD:
+3. Tiền xử lý dữ liệu
+---------------------
+SMD:
 
 python scripts/preprocess_smd.py --raw_root data/ServerMachineDataset --out_root data/smd --window 128 --stride 64
 
-Buoc 2: Tao cac cap source-target va manifest:
+HAI 21.03:
 
-python scripts/build_domain_shift_smd.py ^
-  --data_root data/smd ^
-  --out_root data/smd_experiments ^
-  --build_cross_machine ^
-  --pair_rule cross_entity_hard_learnable_qband ^
-  --global_topk 3 ^
+python scripts/preprocess_hai.py --raw_root external/hai --version 21.03 --out_root data/hai --window 128 --stride 64
+
+Exathlon:
+
+python scripts/preprocess_exathlon.py --raw_root external/exathlon --out_root data/exathlon --window 128 --stride 64 --scale_on normal_rows
+
+4. Chọn source-target pairs bằng best explainable rule
+------------------------------------------------------
+SMD cần bước ranking PAD trước khi build manifest:
+
+python scripts/pilot_rank_jepa_pad_cached.py `
+  --data_root data/smd `
+  --dataset_name smd_cross_entity_all `
+  --pair_scope cross_entity_all `
+  --out_dir outputs/benchmarks/jepa_pad_smd_cross_entity_all `
+  --device cuda `
+  --epochs 10 `
+  --topk 100
+
+Sau đó build manifest SMD theo rule `cross_entity_paper_safe`:
+
+python scripts/build_domain_shift_smd.py `
+  --data_root data/smd `
+  --out_root data/smd_experiments `
+  --pair_rule cross_entity_paper_safe `
+  --rankings_json outputs/benchmarks/jepa_pad_smd_cross_entity_all/pilot_rankings.json `
+  --global_topk 3 `
   --seed 42
 
-Sau khi chay, tim file manifest.json trong data/smd_experiments/.
+HAI cũng cần ranking PAD trước khi build manifest:
 
-4. Chay benchmark theo manifest
--------------------------------
-Lenh mau CPU, cau hinh nho:
+python scripts/pilot_rank_jepa_pad_cached.py `
+  --data_root data/hai `
+  --dataset_name hai_cross_entity_all `
+  --pair_scope cross_entity_all `
+  --out_dir outputs/benchmarks/jepa_pad_hai_cross_entity_all `
+  --device cuda `
+  --epochs 10 `
+  --topk 100
 
-python scripts/run_manifest_benchmarks.py ^
-  --manifest data/smd_experiments/cross_entity_hard_learnable_qband/manifest.json ^
-  --dataset_name smd_demo ^
-  --output_root outputs/benchmarks ^
-  --device cpu ^
-  --epochs_pretrain 1 ^
-  --search_candidates 1 ^
-  --nas_search_iters 1 ^
-  --nas_search_strategy evolutionary_guided ^
-  --oneclass_method deepsvdd ^
-  --weighting_oneclass_method deepsvdd ^
-  --final_oneclass_method deepsvdd ^
-  --oneclass_epochs 1 ^
-  --oneclass_final_epochs 1
+Sau đó build manifest HAI theo rule `cross_entity_paper_safe`:
 
-Ket qua benchmark se nam trong:
+python scripts/build_domain_shift_hai.py `
+  --data_root data/hai `
+  --out_root data/hai_experiments `
+  --pair_rule cross_entity_paper_safe `
+  --rankings_json outputs/benchmarks/jepa_pad_hai_cross_entity_all/pilot_rankings.json `
+  --global_topk 3 `
+  --seed 42
 
-outputs/benchmarks/smd_demo/
+Exathlon dùng stable adaptation-window rule, không cần truyền ranking JSON:
+
+python scripts/build_domain_shift_exathlon.py `
+  --data_root data/exathlon `
+  --out_root data/exathlon_experiments `
+  --pair_rule cross_entity_same_app_stable_adaptation_window `
+  --seed 42
+
+Các manifest chính sau khi build:
+
+data/smd_experiments/cross_entity_paper_safe/manifest.json
+data/hai_experiments/cross_entity_paper_safe/manifest.json
+data/exathlon_experiments/cross_entity_same_app_stable_adaptation_window/manifest.json
+
+5. Chạy full benchmark cho 2 mode và 3 one-class backends
+---------------------------------------------------------
+Đặt cấu hình chung trong PowerShell:
+
+$COMMON = @(
+  "--output_root", "outputs/benchmarks/main_rule_oneclass_plugin_sweep_gpu",
+  "--device", "cuda",
+  "--seed", "42",
+  "--epochs_pretrain", "10",
+  "--search_candidates", "5",
+  "--nas_search_iters", "3",
+  "--nas_search_strategy", "evolutionary_guided",
+  "--combined_nas_topk_rerank", "5",
+  "--batch_size", "64",
+  "--oneclass_epochs", "10",
+  "--oneclass_final_epochs", "20",
+  "--oneclass_batch_size", "1024",
+  "--oneclass_max_fit", "5000"
+)
+
+Chạy SMD:
+
+foreach ($oc in @("deepsvdd", "gmm_head", "lof_head")) {
+  python scripts/run_manifest_benchmarks.py `
+    --manifest data/smd_experiments/cross_entity_paper_safe/manifest.json `
+    --dataset_name "smd_paper_safe_${oc}_gpu" `
+    @COMMON `
+    --oneclass_method $oc `
+    --weighting_oneclass_method $oc `
+    --final_oneclass_method $oc
+}
+
+Chạy HAI:
+
+foreach ($oc in @("deepsvdd", "gmm_head", "lof_head")) {
+  python scripts/run_manifest_benchmarks.py `
+    --manifest data/hai_experiments/cross_entity_paper_safe/manifest.json `
+    --dataset_name "hai_paper_safe_${oc}_gpu" `
+    @COMMON `
+    --oneclass_method $oc `
+    --weighting_oneclass_method $oc `
+    --final_oneclass_method $oc
+}
+
+Chạy Exathlon:
+
+foreach ($oc in @("deepsvdd", "gmm_head", "lof_head")) {
+  python scripts/run_manifest_benchmarks.py `
+    --manifest data/exathlon_experiments/cross_entity_same_app_stable_adaptation_window/manifest.json `
+    --dataset_name "exathlon_same_app_stable_adaptation_window_${oc}_gpu" `
+    @COMMON `
+    --oneclass_method $oc `
+    --weighting_oneclass_method $oc `
+    --final_oneclass_method $oc
+}
+
+Mỗi lệnh `run_manifest_benchmarks.py` tự chạy đúng hai mode `uad_source` và `adaptnas_combined`, đồng thời sinh báo cáo so sánh fixed baselines và NAS baselines.
+
+Kết quả nằm trong:
+
+outputs/benchmarks/main_rule_oneclass_plugin_sweep_gpu/<dataset_name>/
   summary.json
   REPORT.md
-  <pair_id>/
+  <source_entity>__to__<target_entity>/
 
-5. Cau hinh thuc nghiem lon hon
--------------------------------
-Neu muon chay thuc nghiem gan voi cau hinh nghien cuu hon, tang cac tham so:
+Nếu muốn chạy lại dù thư mục kết quả đã tồn tại, thêm `--force_run` vào cuối lệnh benchmark.
 
---epochs_pretrain 10
---search_candidates 5
---nas_search_iters 3
---oneclass_epochs 10
---oneclass_final_epochs 20
---device cuda
+6. Thí nghiệm NAS trên paper frameworks
+---------------------------------------
+Trong phạm vi dataset SMD/HAI/Exathlon, repo hiện có paper-style NAS cho raw SMD với `OmniAnomaly` và `TranAD`. `USAD` trong repo là đường SWaT source-only nên không nằm trong gói HAI/SMD/Exathlon này.
 
-Vi cac thuc nghiem nay ton thoi gian, nen chay smoke test truoc bang cau hinh nho.
+Chạy OmniAnomaly partial NAS trên các máy SMD xuất hiện trong rule chính:
 
-6. Cac file/folder nen dua len GitHub
--------------------------------------
-Nen commit:
+$SMD_MACHINES = @("machine-1-1", "machine-1-4", "machine-1-8", "machine-2-4")
+New-Item -ItemType Directory -Force outputs/benchmarks/paper_framework_nas_smd | Out-Null
 
-.gitignore
-README.md
-requirements.txt
-setup.py
-run.ps1
-HuongDanCaiDat.txt
-HuongDanSuDung.txt
-src/
-scripts/
-docs/            (tuy chon, neu muon kem mo ta ky thuat)
+foreach ($m in $SMD_MACHINES) {
+  python -m src.pipeline `
+    --mode uad_source `
+    --family omni_anomaly `
+    --raw_smd_root data/ServerMachineDataset `
+    --machine $m `
+    --search_candidates 20 `
+    --omni_search_iters 3 `
+    --omni_epochs 20 `
+    --omni_final_epochs 20 `
+    --device cuda
+  Copy-Item outputs/results.json "outputs/benchmarks/paper_framework_nas_smd/omni_anomaly_${m}.json" -Force
+}
 
-Trong src/ nen commit tat ca file .py va cac file nho di kem nhu LICENSE.txt, README.md, hinh minh hoa TS_TCC.png, file data mau nho neu da tracked san.
+Chạy TranAD partial NAS trên cùng nhóm máy SMD:
 
-Trong scripts/ nen commit tat ca file .py vi day la cac entrypoint tien xu ly, tao split, benchmark va phan tich.
+foreach ($m in $SMD_MACHINES) {
+  python -m src.pipeline `
+    --mode uad_source `
+    --family tranad `
+    --raw_smd_root data/ServerMachineDataset `
+    --machine $m `
+    --search_candidates 5 `
+    --tranad_search_iters 2 `
+    --tranad_epochs 5 `
+    --tranad_final_epochs 5 `
+    --device cuda
+  Copy-Item outputs/results.json "outputs/benchmarks/paper_framework_nas_smd/tranad_${m}.json" -Force
+}
 
-7. Cac file/folder khong nen dua len GitHub
--------------------------------------------
-Khong nen commit:
+7. Cách đọc kết quả
+-------------------
+Ưu tiên đọc các file:
 
-data/            du lieu raw, processed .npz, manifest sinh ra
-external/        repo/dataset ben ngoai
-outputs/         ket qua train, log, model output, report sinh ra
-results/         ket qua sinh ra
-runs/            log/runs cua thuc nghiem
-tmp/
-tmp_smoke/
-tmp_rule_tryouts/
-venv/
-.venv/
-__pycache__/
-*.pyc
-.codex/
-.agents/
-.planning/
-thesis/          ban thao khoa luan, khong can de chay code
-flowchart.ipynb  tuy chon, khong can de chay chuong trinh
-pip_list.txt     tuy chon, requirements.txt moi la file cai dat chinh
+outputs/benchmarks/main_rule_oneclass_plugin_sweep_gpu/<dataset_name>/REPORT.md
+outputs/benchmarks/main_rule_oneclass_plugin_sweep_gpu/<dataset_name>/summary.json
 
-8. Lenh git goi y cho source code sach
---------------------------------------
-Sau khi da kiem tra .gitignore, co the add cac file can thiet:
+Trong `REPORT.md`, các cột quan trọng là:
 
-git add .gitignore README.md requirements.txt setup.py run.ps1 HuongDanCaiDat.txt HuongDanSuDung.txt src scripts docs
-git status --short
-
-Neu mot so file/folder khong can chay code da bi track tu truoc, co the bo khoi Git index nhung van giu tren may:
-
-git rm -r --cached .planning
-git rm --cached flowchart.ipynb pip_list.txt
-
-Chi chay cac lenh git rm --cached neu chac chan khong muon dua cac file do len GitHub.
+- `uad_source`: kết quả mode source-only.
+- `combined`: kết quả mode `adaptnas_combined`.
+- `best_NAS`: kiến trúc NAS tốt nhất trong nhóm ứng viên.
+- `best_fixed`: baseline kiến trúc cố định tốt nhất.
+- `d_combined-source AUROC`: chênh lệch AUROC giữa combined và source-only.
+- `d_bestNAS-fixed AUROC`: chênh lệch AUROC giữa NAS và fixed baseline.

@@ -1,25 +1,32 @@
-HUONG DAN CAI DAT
+HƯỚNG DẪN CÀI ĐẶT
 =================
 
-1. Cong cu va moi truong khuyen nghi
+1. Công cụ và môi trường khuyến nghị
 ------------------------------------
-- He dieu hanh: Windows 10/11, Linux, hoac macOS.
-- Terminal: PowerShell tren Windows hoac bash/zsh tren Linux/macOS.
-- Git de clone source code tu GitHub.
-- Python: khuyen nghi Python 3.10 den 3.12.
-- GPU CUDA la tuy chon. Neu khong co GPU, chuong trinh van co the chay voi --device cpu nhung se cham hon.
+- Hệ điều hành: Windows 10/11, Linux hoặc macOS.
+- Terminal khuyến nghị trên Windows: PowerShell.
+- Git để clone source code từ GitHub.
+- Python: khuyến nghị Python 3.10 đến 3.12.
+- GPU NVIDIA/CUDA: khuyến nghị để chạy full experiment. Nếu không có GPU, vẫn có thể đổi `--device cuda` thành `--device cpu`, nhưng thời gian chạy sẽ lâu hơn đáng kể.
 
-2. Lay source code
+2. Lấy source code
 ------------------
-Mo terminal va clone repository:
+Clone repository:
 
 git clone <URL_GITHUB_CUA_BAN>
 cd NAS--for--UAD
 
-Neu nhan source code dang file nen, giai nen va mo terminal tai thu muc goc co cac file:
-README.md, requirements.txt, setup.py, src/, scripts/.
+Nếu nhận source dưới dạng file nén, giải nén và mở terminal tại thư mục gốc có các file/thư mục sau:
 
-3. Tao moi truong ao
+README.md
+requirements.txt
+setup.py
+src/
+scripts/
+HuongDanCaiDat.txt
+HuongDanSuDung.txt
+
+3. Tạo môi trường ảo
 --------------------
 Windows PowerShell:
 
@@ -31,78 +38,84 @@ Linux/macOS:
 python3 -m venv venv
 source venv/bin/activate
 
-Neu PowerShell khong cho activate, chay:
+Nếu PowerShell không cho activate môi trường ảo, chạy một lần:
 
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
-4. Bat ma hoa UTF-8 tren Windows
---------------------------------
-Mot so script co chu tieng Viet trong help text. Tren Windows nen bat UTF-8 truoc khi chay:
+Sau đó đóng/mở lại PowerShell và activate lại môi trường ảo.
+
+4. Bật UTF-8 trên Windows
+-------------------------
+Các file hướng dẫn và một số thông báo có tiếng Việt có dấu. Trên Windows nên bật UTF-8 trước khi chạy:
 
 $env:PYTHONUTF8='1'
 chcp 65001
 
-5. Cai dat thu vien
+5. Cài đặt thư viện
 -------------------
-Sau khi activate venv, chay:
+Sau khi activate môi trường ảo, chạy:
 
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-Neu dung GPU NVIDIA va can cai lai PyTorch ban CUDA, co the dung lenh sau, tuy theo phien ban CUDA may dang ho tro:
+Nếu dùng GPU NVIDIA và cần cài lại PyTorch bản CUDA phù hợp với máy, có thể cài theo trang chính thức của PyTorch. Ví dụ với CUDA 11.8:
 
 python -m pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-Neu chi chay CPU, chi can requirements.txt la du.
+Nếu chỉ chạy CPU, thông thường cài `requirements.txt` là đủ.
 
-6. Kiem tra cai dat
+6. Kiểm tra cài đặt
 -------------------
-Chay cac lenh sau:
+Chạy các lệnh sau:
 
-python -c "import torch, numpy, sklearn, pandas; print('torch=', torch.__version__); print('cuda=', torch.cuda.is_available())"
+python -c "import torch, numpy, sklearn, pandas, scipy; print('torch=', torch.__version__); print('cuda=', torch.cuda.is_available())"
 python -m src.pipeline --help
 
-Neu lenh --help hien danh sach tham so la moi truong da san sang.
+Nếu lệnh `--help` hiển thị danh sách tham số, môi trường đã sẵn sàng.
+Nếu gặp lỗi `ModuleNotFoundError: No module named 'numpy'`, nghĩa là chưa activate đúng môi trường ảo hoặc chưa cài `requirements.txt`.
 
-7. Chuan bi du lieu
+7. Chuẩn bị dữ liệu
 -------------------
-Du lieu KHONG nen dua len GitHub vi thuong rat lon. Nguoi chay can tu dat du lieu vao thu muc data/.
+Dữ liệu raw và dữ liệu đã tiền xử lý KHÔNG đưa lên GitHub vì dung lượng lớn. Người chạy đặt dữ liệu vào các thư mục sau.
 
-Bo du lieu SMD raw duoc ho tro voi cau truc:
+SMD:
 
 data/ServerMachineDataset/
   train/
   test/
   test_label/
 
-Hoac:
+Hoặc:
 
 data/ServerMachineDataset/
   train/
   test/
   labels/
 
-Moi file raw cua SMD co dang machine-*.txt.
+HAI 21.03:
 
-Sau khi co raw SMD, tien xu ly thanh cac file .npz:
+external/hai/hai-21.03/
+  train*.csv hoặc train*.csv.gz
+  test*.csv hoặc test*.csv.gz
 
-python scripts/preprocess_smd.py --raw_root data/ServerMachineDataset --out_root data/smd --window 128 --stride 64
+Có thể đặt ở `data/hai_raw/` hoặc `external/hai/`; script sẽ tự dò layout phổ biến.
 
-Ket qua mong doi:
+Exathlon:
 
-data/smd/
-  machine-1-1/
-    source.npz
-    target.npz
-  machine-.../
-    source.npz
-    target.npz
+external/exathlon/data/
+  ground_truth.csv
+  raw/
+    app*/
+      *.csv hoặc *.zip
 
-8. Thu muc duoc tao khi chay
-----------------------------
-Cac thu muc sau se duoc chuong trinh tao ra va KHONG can commit len GitHub:
+Hoặc đặt ở `data/exathlon_raw/`, miễn là có `ground_truth.csv`/`ground_truth.zip` và các thư mục `app*`.
+
+8. Thư mục sinh ra khi chạy
+---------------------------
+Các thư mục sau do chương trình tạo ra:
 
 data/
+external/
 outputs/
 results/
 runs/
@@ -110,5 +123,7 @@ tmp/
 tmp_smoke/
 tmp_rule_tryouts/
 venv/
+.venv/
+__pycache__/
 
-Neu muon chay lai tu dau, co the xoa cac thu muc output/cache nay sau khi da sao luu ket qua can thiet.
+Nếu muốn chạy lại từ đầu, có thể xóa các thư mục output/cache này sau khi đã sao lưu kết quả cần thiết.
