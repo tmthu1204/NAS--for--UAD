@@ -1,0 +1,114 @@
+HUONG DAN CAI DAT
+=================
+
+1. Cong cu va moi truong khuyen nghi
+------------------------------------
+- He dieu hanh: Windows 10/11, Linux, hoac macOS.
+- Terminal: PowerShell tren Windows hoac bash/zsh tren Linux/macOS.
+- Git de clone source code tu GitHub.
+- Python: khuyen nghi Python 3.10 den 3.12.
+- GPU CUDA la tuy chon. Neu khong co GPU, chuong trinh van co the chay voi --device cpu nhung se cham hon.
+
+2. Lay source code
+------------------
+Mo terminal va clone repository:
+
+git clone <URL_GITHUB_CUA_BAN>
+cd NAS--for--UAD
+
+Neu nhan source code dang file nen, giai nen va mo terminal tai thu muc goc co cac file:
+README.md, requirements.txt, setup.py, src/, scripts/.
+
+3. Tao moi truong ao
+--------------------
+Windows PowerShell:
+
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+Linux/macOS:
+
+python3 -m venv venv
+source venv/bin/activate
+
+Neu PowerShell khong cho activate, chay:
+
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+4. Bat ma hoa UTF-8 tren Windows
+--------------------------------
+Mot so script co chu tieng Viet trong help text. Tren Windows nen bat UTF-8 truoc khi chay:
+
+$env:PYTHONUTF8='1'
+chcp 65001
+
+5. Cai dat thu vien
+-------------------
+Sau khi activate venv, chay:
+
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
+Neu dung GPU NVIDIA va can cai lai PyTorch ban CUDA, co the dung lenh sau, tuy theo phien ban CUDA may dang ho tro:
+
+python -m pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+Neu chi chay CPU, chi can requirements.txt la du.
+
+6. Kiem tra cai dat
+-------------------
+Chay cac lenh sau:
+
+python -c "import torch, numpy, sklearn, pandas; print('torch=', torch.__version__); print('cuda=', torch.cuda.is_available())"
+python -m src.pipeline --help
+
+Neu lenh --help hien danh sach tham so la moi truong da san sang.
+
+7. Chuan bi du lieu
+-------------------
+Du lieu KHONG nen dua len GitHub vi thuong rat lon. Nguoi chay can tu dat du lieu vao thu muc data/.
+
+Bo du lieu SMD raw duoc ho tro voi cau truc:
+
+data/ServerMachineDataset/
+  train/
+  test/
+  test_label/
+
+Hoac:
+
+data/ServerMachineDataset/
+  train/
+  test/
+  labels/
+
+Moi file raw cua SMD co dang machine-*.txt.
+
+Sau khi co raw SMD, tien xu ly thanh cac file .npz:
+
+python scripts/preprocess_smd.py --raw_root data/ServerMachineDataset --out_root data/smd --window 128 --stride 64
+
+Ket qua mong doi:
+
+data/smd/
+  machine-1-1/
+    source.npz
+    target.npz
+  machine-.../
+    source.npz
+    target.npz
+
+8. Thu muc duoc tao khi chay
+----------------------------
+Cac thu muc sau se duoc chuong trinh tao ra va KHONG can commit len GitHub:
+
+data/
+outputs/
+results/
+runs/
+tmp/
+tmp_smoke/
+tmp_rule_tryouts/
+venv/
+
+Neu muon chay lai tu dau, co the xoa cac thu muc output/cache nay sau khi da sao luu ket qua can thiet.

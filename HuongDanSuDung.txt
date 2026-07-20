@@ -1,0 +1,182 @@
+HUONG DAN SU DUNG
+=================
+
+1. Bien dich / kiem tra source
+------------------------------
+Day la project Python nen khong can bien dich nhu C/C++/Java.
+De kiem tra nhanh loi cu phap, chay:
+
+python -m py_compile src/pipeline.py scripts/run_manifest_benchmarks.py scripts/build_domain_shift_smd.py scripts/preprocess_smd.py
+
+De xem cac tham so cua pipeline chinh:
+
+python -m src.pipeline --help
+
+2. Cach chay nhanh voi split .npz co san
+----------------------------------------
+Pipeline chinh la src.pipeline voi family default_nasade.
+
+2.1. Chay mode uad_source
+
+Can 2 hoac 3 file:
+- train_normal.npz
+- val_mixed.npz
+- test_mixed.npz, tuy chon nhung nen co de bao cao ket qua test
+
+Lenh mau CPU, cau hinh nho de smoke test:
+
+python -m src.pipeline ^
+  --family default_nasade ^
+  --mode uad_source ^
+  --dataset_or_paths "DUONG_DAN/train_normal.npz,DUONG_DAN/val_mixed.npz,DUONG_DAN/test_mixed.npz" ^
+  --device cpu ^
+  --epochs_pretrain 1 ^
+  --search_candidates 1 ^
+  --nas_search_iters 1 ^
+  --oneclass_method deepsvdd ^
+  --oneclass_epochs 1 ^
+  --oneclass_final_epochs 1
+
+2.2. Chay mode adaptnas_combined
+
+Can dung 4 file:
+- train_normal.npz
+- target_pool_unlabeled.npz
+- val_mixed.npz
+- test_mixed.npz
+
+Lenh mau CPU, cau hinh nho de smoke test:
+
+python -m src.pipeline ^
+  --family default_nasade ^
+  --mode adaptnas_combined ^
+  --dataset_or_paths "DUONG_DAN/train_normal.npz,DUONG_DAN/target_pool_unlabeled.npz,DUONG_DAN/val_mixed.npz,DUONG_DAN/test_mixed.npz" ^
+  --device cpu ^
+  --epochs_pretrain 1 ^
+  --search_candidates 1 ^
+  --nas_search_iters 1 ^
+  --nas_search_strategy evolutionary_guided ^
+  --oneclass_method deepsvdd ^
+  --weighting_oneclass_method deepsvdd ^
+  --final_oneclass_method deepsvdd ^
+  --oneclass_epochs 1 ^
+  --oneclass_final_epochs 1 ^
+  --combined_search_candidate_warmup_steps 1 ^
+  --combined_search_steps 5 ^
+  --combined_final_candidate_warmup_steps 1 ^
+  --combined_final_steps 5
+
+Neu co GPU CUDA, thay --device cpu bang --device cuda.
+
+3. Tao split va manifest tu SMD raw
+-----------------------------------
+Buoc 1: Tien xu ly raw SMD:
+
+python scripts/preprocess_smd.py --raw_root data/ServerMachineDataset --out_root data/smd --window 128 --stride 64
+
+Buoc 2: Tao cac cap source-target va manifest:
+
+python scripts/build_domain_shift_smd.py ^
+  --data_root data/smd ^
+  --out_root data/smd_experiments ^
+  --build_cross_machine ^
+  --pair_rule cross_entity_hard_learnable_qband ^
+  --global_topk 3 ^
+  --seed 42
+
+Sau khi chay, tim file manifest.json trong data/smd_experiments/.
+
+4. Chay benchmark theo manifest
+-------------------------------
+Lenh mau CPU, cau hinh nho:
+
+python scripts/run_manifest_benchmarks.py ^
+  --manifest data/smd_experiments/cross_entity_hard_learnable_qband/manifest.json ^
+  --dataset_name smd_demo ^
+  --output_root outputs/benchmarks ^
+  --device cpu ^
+  --epochs_pretrain 1 ^
+  --search_candidates 1 ^
+  --nas_search_iters 1 ^
+  --nas_search_strategy evolutionary_guided ^
+  --oneclass_method deepsvdd ^
+  --weighting_oneclass_method deepsvdd ^
+  --final_oneclass_method deepsvdd ^
+  --oneclass_epochs 1 ^
+  --oneclass_final_epochs 1
+
+Ket qua benchmark se nam trong:
+
+outputs/benchmarks/smd_demo/
+  summary.json
+  REPORT.md
+  <pair_id>/
+
+5. Cau hinh thuc nghiem lon hon
+-------------------------------
+Neu muon chay thuc nghiem gan voi cau hinh nghien cuu hon, tang cac tham so:
+
+--epochs_pretrain 10
+--search_candidates 5
+--nas_search_iters 3
+--oneclass_epochs 10
+--oneclass_final_epochs 20
+--device cuda
+
+Vi cac thuc nghiem nay ton thoi gian, nen chay smoke test truoc bang cau hinh nho.
+
+6. Cac file/folder nen dua len GitHub
+-------------------------------------
+Nen commit:
+
+.gitignore
+README.md
+requirements.txt
+setup.py
+run.ps1
+HuongDanCaiDat.txt
+HuongDanSuDung.txt
+src/
+scripts/
+docs/            (tuy chon, neu muon kem mo ta ky thuat)
+
+Trong src/ nen commit tat ca file .py va cac file nho di kem nhu LICENSE.txt, README.md, hinh minh hoa TS_TCC.png, file data mau nho neu da tracked san.
+
+Trong scripts/ nen commit tat ca file .py vi day la cac entrypoint tien xu ly, tao split, benchmark va phan tich.
+
+7. Cac file/folder khong nen dua len GitHub
+-------------------------------------------
+Khong nen commit:
+
+data/            du lieu raw, processed .npz, manifest sinh ra
+external/        repo/dataset ben ngoai
+outputs/         ket qua train, log, model output, report sinh ra
+results/         ket qua sinh ra
+runs/            log/runs cua thuc nghiem
+tmp/
+tmp_smoke/
+tmp_rule_tryouts/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.codex/
+.agents/
+.planning/
+thesis/          ban thao khoa luan, khong can de chay code
+flowchart.ipynb  tuy chon, khong can de chay chuong trinh
+pip_list.txt     tuy chon, requirements.txt moi la file cai dat chinh
+
+8. Lenh git goi y cho source code sach
+--------------------------------------
+Sau khi da kiem tra .gitignore, co the add cac file can thiet:
+
+git add .gitignore README.md requirements.txt setup.py run.ps1 HuongDanCaiDat.txt HuongDanSuDung.txt src scripts docs
+git status --short
+
+Neu mot so file/folder khong can chay code da bi track tu truoc, co the bo khoi Git index nhung van giu tren may:
+
+git rm -r --cached .planning
+git rm --cached flowchart.ipynb pip_list.txt
+
+Chi chay cac lenh git rm --cached neu chac chan khong muon dua cac file do len GitHub.

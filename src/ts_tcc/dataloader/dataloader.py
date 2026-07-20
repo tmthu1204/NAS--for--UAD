@@ -18,7 +18,14 @@ class Load_Dataset(Dataset):
         if len(X_train.shape) < 3:
             X_train = X_train.unsqueeze(2)
 
-        if X_train.shape.index(min(X_train.shape)) != 1:  # make sure the Channels in second dim
+        expected_channels = getattr(config, "input_channels", None)
+        if expected_channels is not None and len(X_train.shape) >= 3:
+            if X_train.shape[1] != expected_channels and X_train.shape[2] == expected_channels:
+                X_train = X_train.permute(0, 2, 1)
+            elif X_train.shape[1] != expected_channels and X_train.shape[2] != expected_channels:
+                if X_train.shape.index(min(X_train.shape)) != 1:
+                    X_train = X_train.permute(0, 2, 1)
+        elif X_train.shape.index(min(X_train.shape)) != 1:  # make sure the Channels in second dim
             X_train = X_train.permute(0, 2, 1)
 
         if isinstance(X_train, np.ndarray):

@@ -12,16 +12,13 @@ if str(PROJ_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJ_ROOT))
 
 from scripts.build_pair_rule_common import (
-    RULE_CROSS_ENTITY_HARD_ADAPTATION_WINDOW_QUANTILE,
     RULE_CROSS_ENTITY_HARD_LEARNABLE,
     RULE_CROSS_ENTITY_HARD_LEARNABLE_QBAND,
     RULE_CROSS_ENTITY_LEARNABLE_SHIFT_VAL_RICH,
     RULE_CROSS_ENTITY_PAPER_SAFE,
-    build_adaptation_window_quantile_methods_text,
     build_hard_learnable_methods_text,
     build_hard_learnable_qband_methods_text,
     build_paper_safe_methods_text,
-    compute_adaptation_window_quantile_thresholds,
     compute_hard_learnable_score,
     compute_hard_learnable_qband_thresholds,
     compute_learnable_shift_val_rich_score,
@@ -37,6 +34,16 @@ from scripts.build_pair_rule_common import (
     write_table_markdown,
 )
 from scripts.make_uad_smd import (
+    DEFAULT_GUARD,
+    DEFAULT_MAX_POOL_ANOM_RATIO,
+    DEFAULT_MIN_ANOM_TEST,
+    DEFAULT_MIN_ANOM_VAL,
+    DEFAULT_MIN_TARGET_POOL,
+    DEFAULT_MIN_TEST,
+    DEFAULT_MIN_VAL,
+    DEFAULT_SEARCH_STEP,
+    DEFAULT_TARGET_POOL_FRAC,
+    DEFAULT_VAL_FRAC,
     binarize_y,
     compute_domain_shift_metrics,
     create_dataset,
@@ -44,34 +51,44 @@ from scripts.make_uad_smd import (
 )
 
 
-def list_machine_dirs(data_root: Path):
-    return sorted([p for p in data_root.iterdir() if p.is_dir() and p.name.startswith("machine-")])
+def list_entity_dirs(data_root: Path):
+    return sorted([p for p in data_root.iterdir() if p.is_dir() and (p / "source.npz").exists() and (p / "target.npz").exists()])
 
 
-def machine_family(name: str) -> str:
-    parts = name.split("-")
-    return "-".join(parts[:2]) if len(parts) >= 2 else name
+def read_entity_meta(entity_dir: Path) -> dict:
+    meta_path = entity_dir / "metadata.json"
+    if not meta_path.exists():
+        name = entity_dir.name
+        role = "train" if "train" in name.lower() else "test"
+        version_tag = name.split("-")[0] if "-" in name else name
+        return {"entity_name": name, "split_role": role, "version_tag": version_tag}
+    return json.loads(meta_path.read_text(encoding="utf-8"))
 
 
-def source_norm_windows(machine_dir: Path):
-    Xs, ys = load_npz(str(machine_dir / "source.npz"))
+def source_norm_windows(entity_dir: Path):
+    Xs, ys = load_npz(str(entity_dir / "source.npz"))
     ys = binarize_y(ys)
     return Xs[ys == 0]
 
 
-def target_windows(machine_dir: Path):
-    Xt, yt = load_npz(str(machine_dir / "target.npz"))
+def target_windows(entity_dir: Path):
+    Xt, yt = load_npz(str(entity_dir / "target.npz"))
     yt = binarize_y(yt)
     return Xt, yt
 
 
-def candidate_cross_targets(source_dir: Path, all_dirs, same_family_only: bool):
-    src_family = machine_family(source_dir.name)
+def candidate_targets(source_dir: Path, all_dirs, same_version_only: bool):
+    src_meta = read_entity_meta(source_dir)
+    src_version = src_meta.get("version_tag") or source_dir.name.split("-")[0]
     out = []
     for target_dir in all_dirs:
         if target_dir == source_dir:
             continue
-        if same_family_only and machine_family(target_dir.name) != src_family:
+        target_meta = read_entity_meta(target_dir)
+        if str(target_meta.get("split_role", "")).lower() != "test":
+            continue
+        tgt_version = target_meta.get("version_tag") or target_dir.name.split("-")[0]
+        if same_version_only and tgt_version != src_version:
             continue
         out.append(target_dir)
     return out
@@ -98,9 +115,8 @@ def rank_cross_targets(source_dir: Path, target_dirs, min_target_anom: int):
 def build_args(
     *,
     source_dir: Path,
-    target_dir: Path | None,
+    target_dir: Path,
     out_dir: Path,
-    split_mode: str,
     shift_level: str,
     target_pool_frac: float,
     val_frac: float,
@@ -116,7 +132,7 @@ def build_args(
 ):
     return SimpleNamespace(
         machine_dir=str(source_dir),
-        target_machine_dir=(str(target_dir) if target_dir is not None else None),
+        target_machine_dir=str(target_dir),
         source_name="source.npz",
         target_name="target.npz",
         out_dir=str(out_dir),
@@ -125,7 +141,7 @@ def build_args(
         out_val="val_mixed.npz",
         out_test="test_mixed.npz",
         out_meta="split_metadata.json",
-        split_mode=split_mode,
+        split_mode="search",
         shift_level=shift_level,
         train_normal_frac=1.0,
         target_pool_frac=target_pool_frac,
@@ -145,7 +161,7 @@ def build_args(
     )
 
 
-def build_hard_learnable_pairs(args, machines, out_root: Path):
+def build_hard_learnable_pairs(args, entity_dirs, out_root: Path):
     if not args.rankings_json:
         raise ValueError("--rankings_json is required when --pair_rule is cross_entity_hard_learnable")
 
@@ -153,16 +169,17 @@ def build_hard_learnable_pairs(args, machines, out_root: Path):
     if not rankings_path.exists():
         raise FileNotFoundError(rankings_path)
 
-    machine_map = {machine_dir.name: machine_dir for machine_dir in machines}
+    entity_map = {entity_dir.name: entity_dir for entity_dir in entity_dirs}
+    entity_meta = {entity_dir.name: read_entity_meta(entity_dir) for entity_dir in entity_dirs}
     protocol_dir = out_root / RULE_CROSS_ENTITY_HARD_LEARNABLE
     protocol_dir.mkdir(parents=True, exist_ok=True)
 
     ranking_payload, ranked_rows = load_pad_pair_rankings(rankings_path)
-    shift_levels = [s.strip() for s in args.rule_shift_levels.split(",") if s.strip()]
+    shift_levels = [s.strip() for s in args.hard_rule_shift_levels.split(",") if s.strip()]
     if not shift_levels:
-        raise ValueError("--rule_shift_levels must contain at least one shift level")
+        raise ValueError("--hard_rule_shift_levels must contain at least one shift level")
     if any(level != "hard" for level in shift_levels):
-        raise ValueError("--rule_shift_levels must be 'hard' for cross_entity_hard_learnable")
+        raise ValueError("--hard_rule_shift_levels must be 'hard' for cross_entity_hard_learnable")
 
     precheck_l2_cap = finite_quantile(
         [row.get("pad_feature_mean_l2") for row in ranked_rows],
@@ -181,6 +198,12 @@ def build_hard_learnable_pairs(args, machines, out_root: Path):
     for ranking_row in ranked_rows:
         src_name = ranking_row["source_entity"]
         tgt_name = ranking_row["target_entity"]
+        src_meta = entity_meta.get(src_name, {})
+        tgt_meta = entity_meta.get(tgt_name, {})
+        src_role = str(src_meta.get("split_role", "")).lower()
+        tgt_role = str(tgt_meta.get("split_role", "")).lower()
+        src_version = src_meta.get("version_tag") or src_name.split("-")[0]
+        tgt_version = tgt_meta.get("version_tag") or tgt_name.split("-")[0]
         pair_name = ranking_row["pair_id"]
         precheck_l2 = safe_float(ranking_row.get("pad_feature_mean_l2"), default=float("nan"))
         base_row = {
@@ -193,15 +216,23 @@ def build_hard_learnable_pairs(args, machines, out_root: Path):
             "pad_domain_auc": ranking_row["pad_domain_auc"],
             "pad_feature_mean_l2": precheck_l2,
             "precheck_l2_cap": precheck_l2_cap,
-            "source_family": machine_family(src_name),
-            "target_family": machine_family(tgt_name),
+            "source_role": src_role,
+            "target_role": tgt_role,
+            "source_version": src_version,
+            "target_version": tgt_version,
         }
 
         failure_reason = ""
         if src_name == tgt_name:
             failure_reason = "same_entity"
-        elif src_name not in machine_map or tgt_name not in machine_map:
-            failure_reason = "filtered_out_by_machine_subset"
+        elif src_name not in entity_map or tgt_name not in entity_map:
+            failure_reason = "filtered_out_by_entity_subset"
+        elif src_role != "train":
+            failure_reason = "source_must_be_train"
+        elif tgt_role != "test":
+            failure_reason = "target_must_be_test"
+        elif (not args.allow_cross_version) and tgt_version != src_version:
+            failure_reason = "cross_version_blocked"
 
         if failure_reason:
             build_rows.append(
@@ -228,14 +259,13 @@ def build_hard_learnable_pairs(args, machines, out_root: Path):
             continue
 
         for shift_level in shift_levels:
-            source_dir = machine_map[src_name]
-            target_dir = machine_map[tgt_name]
+            source_dir = entity_map[src_name]
+            target_dir = entity_map[tgt_name]
             out_dir = protocol_dir / f"{pair_name}__{shift_level}"
             ds_args = build_args(
                 source_dir=source_dir,
                 target_dir=target_dir,
                 out_dir=out_dir,
-                split_mode="search",
                 shift_level=shift_level,
                 target_pool_frac=args.hard_rule_target_pool_frac,
                 val_frac=args.hard_rule_val_frac,
@@ -364,6 +394,10 @@ def build_hard_learnable_pairs(args, machines, out_root: Path):
         "target_entity",
         "pair_id",
         "shift_level",
+        "source_role",
+        "target_role",
+        "source_version",
+        "target_version",
         "pad_value",
         "pad_feature_mean_l2",
         "precheck_l2_cap",
@@ -392,31 +426,32 @@ def build_hard_learnable_pairs(args, machines, out_root: Path):
         protocol_dir / "selection_summary.json",
         {
             "rule_name": RULE_CROSS_ENTITY_HARD_LEARNABLE,
-            "dataset": "smd",
+            "dataset": "hai",
             "ranking_source": str(rankings_path),
             "ranking_notes": ranking_payload.get("notes", {}),
-                "requested_topk": int(args.global_topk),
-                "selected_count": int(len(manifest)),
-                "methods_text": methods_text,
-                "config": {
-                    "rule_shift_levels": shift_levels,
-                    "rule_target_pool_frac": args.hard_rule_target_pool_frac,
-                    "rule_val_frac": args.hard_rule_val_frac,
-                    "rule_guard": args.hard_rule_guard,
-                    "rule_search_step": args.hard_rule_search_step,
-                    "rule_max_pool_anom_ratio": args.hard_rule_max_pool_anom_ratio,
-                    "rule_min_target_pool": args.hard_rule_min_target_pool,
-                    "rule_min_val": args.hard_rule_min_val,
-                    "rule_min_test": args.hard_rule_min_test,
-                    "rule_min_anom_val": args.hard_rule_min_anom_val,
-                    "rule_min_anom_test": args.hard_rule_min_anom_test,
-                    "rule_min_pad_value": args.hard_rule_min_pad_value,
-                    "rule_max_pad_value": args.hard_rule_max_pad_value,
-                    "rule_val_count_ref": args.hard_rule_val_count_ref,
-                    "rule_val_anom_ref": args.hard_rule_val_anom_ref,
-                    "rule_max_precheck_l2_quantile": args.hard_rule_max_precheck_l2_quantile,
-                    "precheck_l2_cap": precheck_l2_cap,
-                },
+            "requested_topk": int(args.global_topk),
+            "selected_count": int(len(manifest)),
+            "methods_text": methods_text,
+            "config": {
+                "rule_shift_levels": shift_levels,
+                "rule_target_pool_frac": args.hard_rule_target_pool_frac,
+                "rule_val_frac": args.hard_rule_val_frac,
+                "rule_guard": args.hard_rule_guard,
+                "rule_search_step": args.hard_rule_search_step,
+                "rule_max_pool_anom_ratio": args.hard_rule_max_pool_anom_ratio,
+                "rule_min_target_pool": args.hard_rule_min_target_pool,
+                "rule_min_val": args.hard_rule_min_val,
+                "rule_min_test": args.hard_rule_min_test,
+                "rule_min_anom_val": args.hard_rule_min_anom_val,
+                "rule_min_anom_test": args.hard_rule_min_anom_test,
+                "rule_min_pad_value": args.hard_rule_min_pad_value,
+                "rule_max_pad_value": args.hard_rule_max_pad_value,
+                "rule_val_count_ref": args.hard_rule_val_count_ref,
+                "rule_val_anom_ref": args.hard_rule_val_anom_ref,
+                "rule_max_precheck_l2_quantile": args.hard_rule_max_precheck_l2_quantile,
+                "precheck_l2_cap": precheck_l2_cap,
+                "allow_cross_version": bool(args.allow_cross_version),
+            },
             "rows": public_rows(build_rows),
         },
     )
@@ -425,7 +460,7 @@ def build_hard_learnable_pairs(args, machines, out_root: Path):
         protocol_dir / "selection_summary.md",
         build_rows,
         build_columns,
-        title="SMD Cross-Entity Hard Learnable Selection",
+        title="HAI Cross-Entity Hard Learnable Selection",
     )
 
     manifest_path = protocol_dir / "manifest.json"
@@ -436,7 +471,7 @@ def build_hard_learnable_pairs(args, machines, out_root: Path):
         print("[WARN] Fewer eligible hard-learnable pairs than requested top-k.")
 
 
-def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
+def build_hard_learnable_qband_pairs(args, entity_dirs, out_root: Path):
     if not args.rankings_json:
         raise ValueError("--rankings_json is required when --pair_rule is cross_entity_hard_learnable_qband")
 
@@ -444,7 +479,8 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
     if not rankings_path.exists():
         raise FileNotFoundError(rankings_path)
 
-    machine_map = {machine_dir.name: machine_dir for machine_dir in machines}
+    entity_map = {entity_dir.name: entity_dir for entity_dir in entity_dirs}
+    entity_meta = {entity_dir.name: read_entity_meta(entity_dir) for entity_dir in entity_dirs}
     protocol_dir = out_root / RULE_CROSS_ENTITY_HARD_LEARNABLE_QBAND
     protocol_dir.mkdir(parents=True, exist_ok=True)
 
@@ -462,6 +498,12 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
     for ranking_row in ranked_rows:
         src_name = ranking_row["source_entity"]
         tgt_name = ranking_row["target_entity"]
+        src_meta = entity_meta.get(src_name, {})
+        tgt_meta = entity_meta.get(tgt_name, {})
+        src_role = str(src_meta.get("split_role", "")).lower()
+        tgt_role = str(tgt_meta.get("split_role", "")).lower()
+        src_version = src_meta.get("version_tag") or src_name.split("-")[0]
+        tgt_version = tgt_meta.get("version_tag") or tgt_name.split("-")[0]
         pair_name = ranking_row["pair_id"]
         precheck_l2 = safe_float(ranking_row.get("pad_feature_mean_l2"), default=float("nan"))
         base_row = {
@@ -473,15 +515,23 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
             "pad_domain_acc": ranking_row["pad_domain_acc"],
             "pad_domain_auc": ranking_row["pad_domain_auc"],
             "pad_feature_mean_l2": precheck_l2,
-            "source_family": machine_family(src_name),
-            "target_family": machine_family(tgt_name),
+            "source_role": src_role,
+            "target_role": tgt_role,
+            "source_version": src_version,
+            "target_version": tgt_version,
         }
 
         failure_reason = ""
         if src_name == tgt_name:
             failure_reason = "same_entity"
-        elif src_name not in machine_map or tgt_name not in machine_map:
-            failure_reason = "filtered_out_by_machine_subset"
+        elif src_name not in entity_map or tgt_name not in entity_map:
+            failure_reason = "filtered_out_by_entity_subset"
+        elif src_role != "train":
+            failure_reason = "source_must_be_train"
+        elif tgt_role != "test":
+            failure_reason = "target_must_be_test"
+        elif (not args.allow_cross_version) and tgt_version != src_version:
+            failure_reason = "cross_version_blocked"
 
         if failure_reason:
             build_rows.append(
@@ -509,14 +559,13 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
             continue
 
         for shift_level in shift_levels:
-            source_dir = machine_map[src_name]
-            target_dir = machine_map[tgt_name]
+            source_dir = entity_map[src_name]
+            target_dir = entity_map[tgt_name]
             out_dir = protocol_dir / f"{pair_name}__{shift_level}"
             ds_args = build_args(
                 source_dir=source_dir,
                 target_dir=target_dir,
                 out_dir=out_dir,
-                split_mode="search",
                 shift_level=shift_level,
                 target_pool_frac=args.hard_qband_target_pool_frac,
                 val_frac=args.hard_qband_val_frac,
@@ -690,6 +739,10 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
         "target_entity",
         "pair_id",
         "shift_level",
+        "source_role",
+        "target_role",
+        "source_version",
+        "target_version",
         "pad_value",
         "pad_feature_mean_l2",
         "precheck_l2_cap",
@@ -719,7 +772,7 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
         protocol_dir / "selection_summary.json",
         {
             "rule_name": RULE_CROSS_ENTITY_HARD_LEARNABLE_QBAND,
-            "dataset": "smd",
+            "dataset": "hai",
             "ranking_source": str(rankings_path),
             "ranking_notes": ranking_payload.get("notes", {}),
             "requested_topk": int(args.global_topk),
@@ -746,6 +799,7 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
                 "rule_min_val_floor": args.hard_qband_min_val_floor,
                 "rule_min_val_anom_floor": args.hard_qband_min_val_anom_floor,
                 "rule_max_val_anom_ratio_cap": args.hard_qband_max_val_anom_ratio_cap,
+                "allow_cross_version": bool(args.allow_cross_version),
             },
             "rows": public_rows(build_rows),
         },
@@ -755,7 +809,7 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
         protocol_dir / "selection_summary.md",
         build_rows,
         build_columns,
-        title="SMD Cross-Entity Hard Learnable QBand Selection",
+        title="HAI Cross-Entity Hard Learnable QBand Selection",
     )
 
     manifest_path = protocol_dir / "manifest.json"
@@ -766,7 +820,7 @@ def build_hard_learnable_qband_pairs(args, machines, out_root: Path):
         print("[WARN] Fewer eligible hard-learnable-qband pairs than requested top-k.")
 
 
-def build_paper_safe_pairs(args, machines, out_root: Path):
+def build_paper_safe_pairs(args, entity_dirs, out_root: Path):
     if not args.rankings_json:
         raise ValueError("--rankings_json is required when --pair_rule is cross_entity_paper_safe")
 
@@ -774,7 +828,8 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
     if not rankings_path.exists():
         raise FileNotFoundError(rankings_path)
 
-    machine_map = {machine_dir.name: machine_dir for machine_dir in machines}
+    entity_map = {entity_dir.name: entity_dir for entity_dir in entity_dirs}
+    entity_meta = {entity_dir.name: read_entity_meta(entity_dir) for entity_dir in entity_dirs}
     protocol_dir = out_root / RULE_CROSS_ENTITY_PAPER_SAFE
     protocol_dir.mkdir(parents=True, exist_ok=True)
 
@@ -790,6 +845,12 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
     for ranking_row in ranked_rows:
         src_name = ranking_row["source_entity"]
         tgt_name = ranking_row["target_entity"]
+        src_meta = entity_meta.get(src_name, {})
+        tgt_meta = entity_meta.get(tgt_name, {})
+        src_role = str(src_meta.get("split_role", "")).lower()
+        tgt_role = str(tgt_meta.get("split_role", "")).lower()
+        src_version = src_meta.get("version_tag") or src_name.split("-")[0]
+        tgt_version = tgt_meta.get("version_tag") or tgt_name.split("-")[0]
         pair_name = ranking_row["pair_id"]
         base_row = {
             "global_pad_rank": ranking_row["global_pad_rank"],
@@ -800,15 +861,23 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
             "pad_domain_acc": ranking_row["pad_domain_acc"],
             "pad_domain_auc": ranking_row["pad_domain_auc"],
             "pad_feature_mean_l2": ranking_row["pad_feature_mean_l2"],
-            "source_family": machine_family(src_name),
-            "target_family": machine_family(tgt_name),
+            "source_role": src_role,
+            "target_role": tgt_role,
+            "source_version": src_version,
+            "target_version": tgt_version,
         }
 
         failure_reason = ""
         if src_name == tgt_name:
             failure_reason = "same_entity"
-        elif src_name not in machine_map or tgt_name not in machine_map:
-            failure_reason = "filtered_out_by_machine_subset"
+        elif src_name not in entity_map or tgt_name not in entity_map:
+            failure_reason = "filtered_out_by_entity_subset"
+        elif src_role != "train":
+            failure_reason = "source_must_be_train"
+        elif tgt_role != "test":
+            failure_reason = "target_must_be_test"
+        elif (not args.allow_cross_version) and tgt_version != src_version:
+            failure_reason = "cross_version_blocked"
 
         if failure_reason:
             build_rows.append(
@@ -831,8 +900,8 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
             )
             continue
 
-        source_dir = machine_map[src_name]
-        target_dir = machine_map[tgt_name]
+        source_dir = entity_map[src_name]
+        target_dir = entity_map[tgt_name]
         built = False
         for shift_index, shift_level in enumerate(shift_levels):
             out_dir = protocol_dir / f"{pair_name}__{shift_level}"
@@ -840,7 +909,6 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
                 source_dir=source_dir,
                 target_dir=target_dir,
                 out_dir=out_dir,
-                split_mode="search",
                 shift_level=shift_level,
                 target_pool_frac=args.paper_safe_target_pool_frac,
                 val_frac=args.paper_safe_val_frac,
@@ -989,6 +1057,10 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
         "pair_id",
         "shift_level",
         "shift_preference_rank",
+        "source_role",
+        "target_role",
+        "source_version",
+        "target_version",
         "pad_value",
         "pad_domain_acc",
         "pad_domain_auc",
@@ -1014,7 +1086,7 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
         protocol_dir / "selection_summary.json",
         {
             "rule_name": RULE_CROSS_ENTITY_PAPER_SAFE,
-            "dataset": "smd",
+            "dataset": "hai",
             "ranking_source": str(rankings_path),
             "ranking_notes": ranking_payload.get("notes", {}),
             "requested_topk": int(args.global_topk),
@@ -1040,6 +1112,7 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
                 "rule_min_val_floor": args.paper_safe_min_val_floor,
                 "rule_min_val_anom_floor": args.paper_safe_min_val_anom_floor,
                 "rule_max_val_anom_ratio_cap": args.paper_safe_max_val_anom_ratio_cap,
+                "allow_cross_version": bool(args.allow_cross_version),
             },
             "rows": public_rows(build_rows),
         },
@@ -1049,7 +1122,7 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
         protocol_dir / "selection_summary.md",
         build_rows,
         build_columns,
-        title="SMD Paper-Safe Cross-Entity Selection",
+        title="HAI Paper-Safe Cross-Entity Selection",
     )
 
     manifest_path = protocol_dir / "manifest.json"
@@ -1060,7 +1133,7 @@ def build_paper_safe_pairs(args, machines, out_root: Path):
         print("[WARN] Fewer eligible paper-safe pairs than requested top-k.")
 
 
-def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
+def build_learnable_shift_val_rich_pairs(args, entity_dirs, out_root: Path):
     if not args.rankings_json:
         raise ValueError("--rankings_json is required when --pair_rule is cross_entity_learnable_shift_val_rich")
 
@@ -1068,7 +1141,8 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
     if not rankings_path.exists():
         raise FileNotFoundError(rankings_path)
 
-    machine_map = {machine_dir.name: machine_dir for machine_dir in machines}
+    entity_map = {entity_dir.name: entity_dir for entity_dir in entity_dirs}
+    entity_meta = {entity_dir.name: read_entity_meta(entity_dir) for entity_dir in entity_dirs}
     protocol_dir = out_root / RULE_CROSS_ENTITY_LEARNABLE_SHIFT_VAL_RICH
     protocol_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1080,6 +1154,12 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
     for ranking_row in ranked_rows:
         src_name = ranking_row["source_entity"]
         tgt_name = ranking_row["target_entity"]
+        src_meta = entity_meta.get(src_name, {})
+        tgt_meta = entity_meta.get(tgt_name, {})
+        src_role = str(src_meta.get("split_role", "")).lower()
+        tgt_role = str(tgt_meta.get("split_role", "")).lower()
+        src_version = src_meta.get("version_tag") or src_name.split("-")[0]
+        tgt_version = tgt_meta.get("version_tag") or tgt_name.split("-")[0]
         pair_name = ranking_row["pair_id"]
         base_row = {
             "global_pad_rank": ranking_row["global_pad_rank"],
@@ -1090,10 +1170,25 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
             "pad_domain_acc": ranking_row["pad_domain_acc"],
             "pad_domain_auc": ranking_row["pad_domain_auc"],
             "pad_feature_mean_l2": ranking_row["pad_feature_mean_l2"],
-            "source_family": machine_family(src_name),
-            "target_family": machine_family(tgt_name),
+            "source_role": src_role,
+            "target_role": tgt_role,
+            "source_version": src_version,
+            "target_version": tgt_version,
         }
+
+        failure_reason = ""
         if src_name == tgt_name:
+            failure_reason = "same_entity"
+        elif src_name not in entity_map or tgt_name not in entity_map:
+            failure_reason = "filtered_out_by_entity_subset"
+        elif src_role != "train":
+            failure_reason = "source_must_be_train"
+        elif tgt_role != "test":
+            failure_reason = "target_must_be_test"
+        elif (not args.allow_cross_version) and tgt_version != src_version:
+            failure_reason = "cross_version_blocked"
+
+        if failure_reason:
             build_rows.append(
                 {
                     **base_row,
@@ -1113,44 +1208,19 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
                     "test_count": "",
                     "val_anomaly_count": "",
                     "test_anomaly_count": "",
-                    "failure_reason": "same_entity",
-                }
-            )
-            continue
-        if src_name not in machine_map or tgt_name not in machine_map:
-            build_rows.append(
-                {
-                    **base_row,
-                    "shift_level": "",
-                    "build_success": False,
-                    "eligible": False,
-                    "selected": False,
-                    "learnable_score": "",
-                    "shift_strength": "",
-                    "pool_cleanliness": "",
-                    "val_richness": "",
-                    "source_vs_pool_domain_auc": "",
-                    "target_pool_hidden_anomaly_ratio": "",
-                    "train_normal_count": "",
-                    "target_pool_count": "",
-                    "val_count": "",
-                    "test_count": "",
-                    "val_anomaly_count": "",
-                    "test_anomaly_count": "",
-                    "failure_reason": "filtered_out_by_machine_subset",
+                    "failure_reason": failure_reason,
                 }
             )
             continue
 
         for shift_level in shift_levels:
-            source_dir = machine_map[src_name]
-            target_dir = machine_map[tgt_name]
+            source_dir = entity_map[src_name]
+            target_dir = entity_map[tgt_name]
             out_dir = protocol_dir / f"{pair_name}__{shift_level}"
             ds_args = build_args(
                 source_dir=source_dir,
                 target_dir=target_dir,
                 out_dir=out_dir,
-                split_mode="search",
                 shift_level=shift_level,
                 target_pool_frac=args.rule_target_pool_frac,
                 val_frac=args.rule_val_frac,
@@ -1274,6 +1344,10 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
         "target_entity",
         "pair_id",
         "shift_level",
+        "source_role",
+        "target_role",
+        "source_version",
+        "target_version",
         "pad_value",
         "build_success",
         "eligible",
@@ -1301,7 +1375,7 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
         protocol_dir / "selection_summary.json",
         {
             "rule_name": RULE_CROSS_ENTITY_LEARNABLE_SHIFT_VAL_RICH,
-            "dataset": "smd",
+            "dataset": "hai",
             "ranking_source": str(rankings_path),
             "ranking_notes": ranking_payload.get("notes", {}),
             "requested_topk": int(args.global_topk),
@@ -1322,6 +1396,7 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
                 "rule_min_source_pool_auc": args.rule_min_source_pool_auc,
                 "rule_val_count_ref": args.rule_val_count_ref,
                 "rule_val_anom_ref": args.rule_val_anom_ref,
+                "allow_cross_version": bool(args.allow_cross_version),
             },
             "rows": public_rows(build_rows),
         },
@@ -1331,7 +1406,7 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
         protocol_dir / "selection_summary.md",
         build_rows,
         build_columns,
-        title="SMD Learnable Shift Val-Rich Selection",
+        title="HAI Learnable Shift Val-Rich Selection",
     )
 
     manifest_path = protocol_dir / "manifest.json"
@@ -1344,26 +1419,24 @@ def build_learnable_shift_val_rich_pairs(args, machines, out_root: Path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data_root", default="data/smd")
-    ap.add_argument("--out_root", default="data/smd_experiments")
-    ap.add_argument("--machines", default=None, help="Comma-separated machine names to include, e.g. machine-1-1,machine-1-2")
-    ap.add_argument("--max_machines", type=int, default=0)
-    ap.add_argument("--shift_levels", default="medium,hard")
-    ap.add_argument("--build_temporal", action="store_true")
-    ap.add_argument("--build_cross_machine", action="store_true")
-    ap.add_argument("--same_family_only", action="store_true")
+    ap.add_argument("--data_root", default="data/hai")
+    ap.add_argument("--out_root", default="data/hai_experiments")
+    ap.add_argument("--entities", default=None, help="Comma-separated cached HAI entities to include.")
+    ap.add_argument("--max_entities", type=int, default=0)
+    ap.add_argument("--shift_levels", default="auto,hard")
     ap.add_argument("--topk_cross", type=int, default=1)
-    ap.add_argument("--target_pool_frac", type=float, default=0.20)
-    ap.add_argument("--val_frac", type=float, default=0.30)
-    ap.add_argument("--guard", type=int, default=4)
-    ap.add_argument("--search_step", type=int, default=4)
-    ap.add_argument("--max_pool_anom_ratio", type=float, default=0.10)
-    ap.add_argument("--min_target_pool", type=int, default=32)
-    ap.add_argument("--min_val", type=int, default=32)
-    ap.add_argument("--min_test", type=int, default=64)
-    ap.add_argument("--min_anom_val", type=int, default=3)
-    ap.add_argument("--min_anom_test", type=int, default=5)
-    ap.add_argument("--min_target_anom", type=int, default=5)
+    ap.add_argument("--target_pool_frac", type=float, default=DEFAULT_TARGET_POOL_FRAC)
+    ap.add_argument("--val_frac", type=float, default=DEFAULT_VAL_FRAC)
+    ap.add_argument("--guard", type=int, default=DEFAULT_GUARD)
+    ap.add_argument("--search_step", type=int, default=DEFAULT_SEARCH_STEP)
+    ap.add_argument("--max_pool_anom_ratio", type=float, default=DEFAULT_MAX_POOL_ANOM_RATIO)
+    ap.add_argument("--min_target_pool", type=int, default=DEFAULT_MIN_TARGET_POOL)
+    ap.add_argument("--min_val", type=int, default=DEFAULT_MIN_VAL)
+    ap.add_argument("--min_test", type=int, default=DEFAULT_MIN_TEST)
+    ap.add_argument("--min_anom_val", type=int, default=DEFAULT_MIN_ANOM_VAL)
+    ap.add_argument("--min_anom_test", type=int, default=DEFAULT_MIN_ANOM_TEST)
+    ap.add_argument("--min_target_anom", type=int, default=3)
+    ap.add_argument("--allow_cross_version", action="store_true")
     ap.add_argument(
         "--pair_rule",
         default="per_source_topk",
@@ -1381,29 +1454,29 @@ def main():
     ap.add_argument("--rule_target_pool_frac", type=float, default=0.20)
     ap.add_argument("--rule_val_frac", type=float, default=0.45)
     ap.add_argument("--rule_guard", type=int, default=0)
-    ap.add_argument("--rule_search_step", type=int, default=4)
-    ap.add_argument("--rule_max_pool_anom_ratio", type=float, default=0.08)
-    ap.add_argument("--rule_min_target_pool", type=int, default=48)
-    ap.add_argument("--rule_min_val", type=int, default=80)
-    ap.add_argument("--rule_min_test", type=int, default=96)
+    ap.add_argument("--rule_search_step", type=int, default=DEFAULT_SEARCH_STEP)
+    ap.add_argument("--rule_max_pool_anom_ratio", type=float, default=0.05)
+    ap.add_argument("--rule_min_target_pool", type=int, default=64)
+    ap.add_argument("--rule_min_val", type=int, default=128)
+    ap.add_argument("--rule_min_test", type=int, default=192)
     ap.add_argument("--rule_min_anom_val", type=int, default=8)
-    ap.add_argument("--rule_min_anom_test", type=int, default=8)
+    ap.add_argument("--rule_min_anom_test", type=int, default=10)
     ap.add_argument("--rule_min_pad_value", type=float, default=1.0)
     ap.add_argument("--rule_max_pad_value", type=float, default=2.0)
     ap.add_argument("--rule_min_source_pool_auc", type=float, default=0.90)
-    ap.add_argument("--rule_val_count_ref", type=int, default=96)
+    ap.add_argument("--rule_val_count_ref", type=int, default=160)
     ap.add_argument("--rule_val_anom_ref", type=int, default=16)
     ap.add_argument("--hard_rule_shift_levels", default="hard")
     ap.add_argument("--hard_rule_target_pool_frac", type=float, default=0.20)
     ap.add_argument("--hard_rule_val_frac", type=float, default=0.45)
     ap.add_argument("--hard_rule_guard", type=int, default=0)
-    ap.add_argument("--hard_rule_search_step", type=int, default=4)
+    ap.add_argument("--hard_rule_search_step", type=int, default=DEFAULT_SEARCH_STEP)
     ap.add_argument("--hard_rule_max_pool_anom_ratio", type=float, default=0.10)
-    ap.add_argument("--hard_rule_min_target_pool", type=int, default=32)
+    ap.add_argument("--hard_rule_min_target_pool", type=int, default=DEFAULT_MIN_TARGET_POOL)
     ap.add_argument("--hard_rule_min_val", type=int, default=32)
-    ap.add_argument("--hard_rule_min_test", type=int, default=64)
+    ap.add_argument("--hard_rule_min_test", type=int, default=DEFAULT_MIN_TEST)
     ap.add_argument("--hard_rule_min_anom_val", type=int, default=7)
-    ap.add_argument("--hard_rule_min_anom_test", type=int, default=5)
+    ap.add_argument("--hard_rule_min_anom_test", type=int, default=DEFAULT_MIN_ANOM_TEST)
     ap.add_argument("--hard_rule_min_pad_value", type=float, default=1.0)
     ap.add_argument("--hard_rule_max_pad_value", type=float, default=2.0)
     ap.add_argument("--hard_rule_val_count_ref", type=int, default=64)
@@ -1413,10 +1486,10 @@ def main():
     ap.add_argument("--hard_qband_target_pool_frac", type=float, default=0.20)
     ap.add_argument("--hard_qband_val_frac", type=float, default=0.45)
     ap.add_argument("--hard_qband_guard", type=int, default=0)
-    ap.add_argument("--hard_qband_search_step", type=int, default=4)
-    ap.add_argument("--hard_qband_min_target_pool", type=int, default=32)
-    ap.add_argument("--hard_qband_min_test", type=int, default=64)
-    ap.add_argument("--hard_qband_min_anom_test", type=int, default=5)
+    ap.add_argument("--hard_qband_search_step", type=int, default=DEFAULT_SEARCH_STEP)
+    ap.add_argument("--hard_qband_min_target_pool", type=int, default=DEFAULT_MIN_TARGET_POOL)
+    ap.add_argument("--hard_qband_min_test", type=int, default=DEFAULT_MIN_TEST)
+    ap.add_argument("--hard_qband_min_anom_test", type=int, default=DEFAULT_MIN_ANOM_TEST)
     ap.add_argument("--hard_qband_min_pad_quantile", type=float, default=0.50)
     ap.add_argument("--hard_qband_max_precheck_l2_quantile", type=float, default=0.80)
     ap.add_argument("--hard_qband_max_pool_anom_ratio_quantile", type=float, default=0.80)
@@ -1432,10 +1505,10 @@ def main():
     ap.add_argument("--paper_safe_target_pool_frac", type=float, default=0.20)
     ap.add_argument("--paper_safe_val_frac", type=float, default=0.45)
     ap.add_argument("--paper_safe_guard", type=int, default=0)
-    ap.add_argument("--paper_safe_search_step", type=int, default=4)
-    ap.add_argument("--paper_safe_min_target_pool", type=int, default=32)
-    ap.add_argument("--paper_safe_min_test", type=int, default=64)
-    ap.add_argument("--paper_safe_min_anom_test", type=int, default=5)
+    ap.add_argument("--paper_safe_search_step", type=int, default=DEFAULT_SEARCH_STEP)
+    ap.add_argument("--paper_safe_min_target_pool", type=int, default=DEFAULT_MIN_TARGET_POOL)
+    ap.add_argument("--paper_safe_min_test", type=int, default=DEFAULT_MIN_TEST)
+    ap.add_argument("--paper_safe_min_anom_test", type=int, default=DEFAULT_MIN_ANOM_TEST)
     ap.add_argument("--paper_safe_min_pad_quantile", type=float, default=0.50)
     ap.add_argument("--paper_safe_max_pool_anom_ratio_quantile", type=float, default=0.80)
     ap.add_argument("--paper_safe_min_val_count_quantile", type=float, default=0.30)
@@ -1452,46 +1525,51 @@ def main():
     data_root = Path(args.data_root)
     out_root = Path(args.out_root)
     shift_levels = [s.strip() for s in args.shift_levels.split(",") if s.strip()]
-    machines = list_machine_dirs(data_root)
-    if not machines:
-        raise FileNotFoundError(f"No machine-* folders under {data_root}")
+    entity_dirs = list_entity_dirs(data_root)
+    if not entity_dirs:
+        raise FileNotFoundError(f"No cached HAI entity folders with source.npz/target.npz under {data_root}")
 
-    if args.machines:
-        keep = {m.strip() for m in args.machines.split(",") if m.strip()}
-        machines = [m for m in machines if m.name in keep]
-    if args.max_machines > 0:
-        machines = machines[: args.max_machines]
-    if not machines:
-        raise ValueError("No machines left after filtering.")
+    if args.entities:
+        keep = {e.strip() for e in args.entities.split(",") if e.strip()}
+        entity_dirs = [p for p in entity_dirs if p.name in keep]
+    if args.max_entities > 0:
+        entity_dirs = entity_dirs[: args.max_entities]
+    if not entity_dirs:
+        raise ValueError("No HAI entities left after filtering.")
 
     if args.pair_rule == RULE_CROSS_ENTITY_LEARNABLE_SHIFT_VAL_RICH:
-        build_learnable_shift_val_rich_pairs(args, machines, out_root)
+        build_learnable_shift_val_rich_pairs(args, entity_dirs, out_root)
         return
     if args.pair_rule == RULE_CROSS_ENTITY_HARD_LEARNABLE:
-        args.rule_shift_levels = args.hard_rule_shift_levels
-        build_hard_learnable_pairs(args, machines, out_root)
+        build_hard_learnable_pairs(args, entity_dirs, out_root)
         return
     if args.pair_rule == RULE_CROSS_ENTITY_HARD_LEARNABLE_QBAND:
-        build_hard_learnable_qband_pairs(args, machines, out_root)
+        build_hard_learnable_qband_pairs(args, entity_dirs, out_root)
         return
     if args.pair_rule == RULE_CROSS_ENTITY_PAPER_SAFE:
-        build_paper_safe_pairs(args, machines, out_root)
+        build_paper_safe_pairs(args, entity_dirs, out_root)
         return
 
-    build_temporal = args.build_temporal or (not args.build_temporal and not args.build_cross_machine)
-    build_cross = args.build_cross_machine or (not args.build_temporal and not args.build_cross_machine)
+    source_entities = [p for p in entity_dirs if str(read_entity_meta(p).get("split_role", "")).lower() == "train"]
+    target_entities = [p for p in entity_dirs if str(read_entity_meta(p).get("split_role", "")).lower() == "test"]
+    if not source_entities or not target_entities:
+        raise ValueError("HAI builder expects at least one train entity and one test entity.")
 
+    same_version_only = not args.allow_cross_version
     manifest = []
-
-    if build_temporal:
-        for shift_level in shift_levels:
-            for source_dir in machines:
-                out_dir = out_root / f"temporal_{shift_level}" / source_dir.name
+    for shift_level in shift_levels:
+        for source_dir in source_entities:
+            ranked = rank_cross_targets(
+                source_dir,
+                candidate_targets(source_dir, target_entities, same_version_only),
+                min_target_anom=args.min_target_anom,
+            )
+            for _, _, target_dir, shift in ranked[: args.topk_cross]:
+                out_dir = out_root / f"cross_entity_{shift_level}" / f"{source_dir.name}__to__{target_dir.name}"
                 ds_args = build_args(
                     source_dir=source_dir,
-                    target_dir=None,
+                    target_dir=target_dir,
                     out_dir=out_dir,
-                    split_mode="search",
                     shift_level=shift_level,
                     target_pool_frac=args.target_pool_frac,
                     val_frac=args.val_frac,
@@ -1507,52 +1585,18 @@ def main():
                 )
                 try:
                     meta = create_dataset(ds_args)
+                    meta["candidate_pair_shift_precheck"] = shift
+                    meta["same_version_only"] = bool(same_version_only)
                     manifest.append(meta)
                 except Exception as exc:
-                    print(f"[WARN] temporal {shift_level} {source_dir.name}: {exc}")
-
-    if build_cross:
-        for shift_level in shift_levels:
-            for source_dir in machines:
-                ranked = rank_cross_targets(
-                    source_dir,
-                    candidate_cross_targets(source_dir, machines, args.same_family_only),
-                    min_target_anom=args.min_target_anom,
-                )
-                for _, _, target_dir, shift in ranked[: args.topk_cross]:
-                    out_dir = out_root / f"cross_machine_{shift_level}" / f"{source_dir.name}__to__{target_dir.name}"
-                    ds_args = build_args(
-                        source_dir=source_dir,
-                        target_dir=target_dir,
-                        out_dir=out_dir,
-                        split_mode="search",
-                        shift_level=shift_level,
-                        target_pool_frac=args.target_pool_frac,
-                        val_frac=args.val_frac,
-                        guard=args.guard,
-                        search_step=args.search_step,
-                        max_pool_anom_ratio=args.max_pool_anom_ratio,
-                        min_target_pool=args.min_target_pool,
-                        min_val=args.min_val,
-                        min_test=args.min_test,
-                        min_anom_val=args.min_anom_val,
-                        min_anom_test=args.min_anom_test,
-                        seed=args.seed,
-                    )
-                    try:
-                        meta = create_dataset(ds_args)
-                        meta["candidate_pair_shift_precheck"] = shift
-                        manifest.append(meta)
-                    except Exception as exc:
-                        print(f"[WARN] cross {shift_level} {source_dir.name}->{target_dir.name}: {exc}")
+                    print(f"[WARN] cross {shift_level} {source_dir.name}->{target_dir.name}: {exc}")
 
     out_root.mkdir(parents=True, exist_ok=True)
     manifest_path = out_root / "manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
-    print(f"[DONE] Saved manifest: {manifest_path}")
-    print(f"[DONE] Total experiment folders: {len(manifest)}")
+    print(f"[OK] Saved manifest with {len(manifest)} entries to {manifest_path}")
 
 
 if __name__ == "__main__":

@@ -168,8 +168,18 @@ def main():
 
     entity_cache = {}
     pretrain_blocks = []
+    skipped_entities = []
     for idx, entity_dir in enumerate(entity_dirs):
-        pack = load_cached_entity(entity_dir, args.source_name, args.target_name)
+        try:
+            pack = load_cached_entity(entity_dir, args.source_name, args.target_name)
+        except MemoryError as exc:
+            skipped_entities.append({"entity": entity_dir.name, "reason": f"memory_error: {exc}"})
+            print(f"[WARN] Skipping {entity_dir.name}: {exc}")
+            continue
+        except Exception as exc:
+            skipped_entities.append({"entity": entity_dir.name, "reason": str(exc)})
+            print(f"[WARN] Skipping {entity_dir.name}: {exc}")
+            continue
         pack["source_normal_eval"] = sample_cap(
             pack["source_normal_windows"],
             args.max_eval_windows_per_entity,
@@ -193,6 +203,9 @@ def main():
             f"source_normal={len(pack['source_normal_windows'])} "
             f"target_normal={len(pack['target_normal_windows'])}"
         )
+
+    if not entity_cache:
+        raise ValueError("No cacheable entities left after loading cached dataset artifacts.")
 
     x_pretrain = np.concatenate(pretrain_blocks, axis=0).astype(np.float32)
     print(f"[INFO] Global JEPA pretrain windows: {x_pretrain.shape}")
@@ -333,6 +346,8 @@ def main():
         "max_pad_samples": args.max_pad_samples,
         "pad_logreg_c": args.pad_logreg_c,
         "entities": [p.name for p in entity_dirs],
+        "loaded_entities": sorted(entity_cache.keys()),
+        "skipped_entities": skipped_entities,
         "train_history": train_history,
         "entity_stats": {
             entity_name: {

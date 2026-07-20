@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from .autoencoder_backend import AutoEncoderBackend
 from .base import OneClassConfig
+from .dagmm_head_backend import DAGMMHeadBackend
 from .deepsvdd_backend import DeepSVDDBackend
+from .drocc_head_backend import DROCCHeadBackend
 from .gmm_head_backend import GMMHeadBackend
+from .isolation_forest_backend import IsolationForestBackend
 from .knn_backend import KNNDistanceBackend
+from .lof_head_backend import LOFHeadBackend
 from .mahalanobis_head_backend import MahalanobisHeadBackend
+from .normalizing_flow_head_backend import NormalizingFlowHeadBackend
 from .oneclass_svm_backend import OneClassSVMBackend
 from .prototype_oneclass_backend import PrototypeOneClassBackend
 from .svdd_backend import SVDDBackend
@@ -14,9 +19,14 @@ from .svdd_backend import SVDDBackend
 BACKEND_REGISTRY = {
     DeepSVDDBackend.method_name: DeepSVDDBackend,
     AutoEncoderBackend.method_name: AutoEncoderBackend,
+    DAGMMHeadBackend.method_name: DAGMMHeadBackend,
+    DROCCHeadBackend.method_name: DROCCHeadBackend,
     KNNDistanceBackend.method_name: KNNDistanceBackend,
     GMMHeadBackend.method_name: GMMHeadBackend,
+    IsolationForestBackend.method_name: IsolationForestBackend,
     MahalanobisHeadBackend.method_name: MahalanobisHeadBackend,
+    NormalizingFlowHeadBackend.method_name: NormalizingFlowHeadBackend,
+    LOFHeadBackend.method_name: LOFHeadBackend,
     OneClassSVMBackend.method_name: OneClassSVMBackend,
     PrototypeOneClassBackend.method_name: PrototypeOneClassBackend,
     SVDDBackend.method_name: SVDDBackend,

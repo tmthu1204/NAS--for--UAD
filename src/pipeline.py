@@ -8,7 +8,7 @@ Top-level orchestrator (UAD project):
     * bilevel AdaptNAS search with:
         - lower level on source normal + unlabeled weighted target pool
         - upper level on source holdout normal + unlabeled weighted target pool
-    * final-only baselines (Base_* + NAS_BestArch) with same weighting
+    * final-only baselines (Base_* + NAS_BestArch + optional NAS top-K rerank) with same weighting
     * report UAD metrics on test_mixed if provided else on val_mixed
 
 - (Mode B) uad_source:
@@ -30,6 +30,7 @@ import argparse
 import os
 import json
 import random
+from collections import defaultdict
 from dataclasses import replace
 import numpy as np
 import torch
@@ -46,7 +47,7 @@ from src.data.swat import RawSWaTDataset
 from src.data.swat import build_upstream_usad_flat_windows, build_upstream_usad_window_labels
 from src.data.tranad_smd import build_tranad_windows, load_raw_tranad_smd_machine
 from src.ts_tcc.trainer.trainer import TSTrainer
-from src.adaptnas.search_space import sample_arch
+from src.adaptnas.search_space import clone_arch, list_search_families, mutate_arch, sample_arch
 from src.adaptnas.trainer import train_bilevel
 from src.families.omni_anomaly import (
     OmniAnomalyModel,
@@ -155,13 +156,24 @@ def fix_length(X, window=128):
     return np.stack(X_fixed, axis=0)
 
 
-def load_all_cached_entities_for_pretrain(root_dir="data/smd", window=128):
+def load_all_cached_entities_for_pretrain(
+    root_dir="data/smd",
+    window=128,
+    in_channels=None,
+    entity_prefix=None,
+    max_windows_per_entity=0,
+    seed=42,
+):
     import glob
     all_X = []
     n_entities = 0
+    rng = np.random.RandomState(seed)
 
     for mdir in sorted(glob.glob(os.path.join(root_dir, "*"))):
         if not os.path.isdir(mdir):
+            continue
+        entity_name = os.path.basename(mdir)
+        if entity_prefix and not entity_name.startswith(entity_prefix):
             continue
         used_any = False
         for fname in ["source.npz", "target.npz"]:
@@ -170,6 +182,11 @@ def load_all_cached_entities_for_pretrain(root_dir="data/smd", window=128):
                 continue
             Xm, _ = load_npz_if_exists(npz_path)
             Xm = fix_length(Xm, window=window)
+            if in_channels is not None and Xm.shape[-1] != int(in_channels):
+                continue
+            if max_windows_per_entity and len(Xm) > int(max_windows_per_entity):
+                idx = rng.choice(len(Xm), size=int(max_windows_per_entity), replace=False)
+                Xm = Xm[idx]
             all_X.append(Xm)
             used_any = True
         if used_any:
@@ -187,7 +204,7 @@ def infer_cached_pretrain_root(npz_path: str):
     parent_dir = os.path.dirname(machine_dir)
     parent_name = os.path.basename(parent_dir).lower()
 
-    if parent_name in {"smd", "smap", "msl"}:
+    if parent_name in {"smd", "smap", "msl", "exathlon", "hai"}:
         return parent_dir
 
     if parent_name.startswith("temporal_") or parent_name.startswith("cross_"):
@@ -256,6 +273,378 @@ def build_upper_unlabeled_loaders(X_source_holdout, X_target_pool, w_target, bs=
     src_loader = DataLoader(ds_src, batch_size=min(bs, max(1, len(ds_src))), shuffle=True, drop_last=False)
     tgt_loader = DataLoader(ds_tgt, batch_size=min(bs, max(1, len(ds_tgt))), shuffle=True, drop_last=False)
     return src_loader, tgt_loader
+
+
+def _parse_nas_families(raw_families: str):
+    valid = set(list_search_families())
+    requested = [part.strip().lower() for part in str(raw_families).split(",") if part.strip()]
+    if not requested:
+        requested = list_search_families()
+
+    families = []
+    for family in requested:
+        if family not in valid:
+            raise ValueError(
+                f"Unsupported NAS family '{family}'. Expected a comma-separated subset of {sorted(valid)}."
+            )
+        if family not in families:
+            families.append(family)
+    return families
+
+
+def build_nas_sampling_plan(args):
+    strategy = getattr(args, "nas_search_strategy", "random")
+    requested_total = max(1, int(args.search_candidates))
+
+    if strategy == "random":
+        return {
+            "strategy": strategy,
+            "families": ["mixed"],
+            "plan": [(None, requested_total)],
+            "requested_candidates": requested_total,
+            "effective_candidates": requested_total,
+        }
+
+    if strategy not in {"family_wise_constrained", "adaptive_family_wise", "evolutionary_guided"}:
+        raise ValueError(f"Unsupported nas_search_strategy: {strategy}")
+
+    families = _parse_nas_families(args.nas_search_families)
+    effective_total = requested_total
+    if effective_total < len(families):
+        print(
+            f"[INFO] Raising search_candidates from {requested_total} to {len(families)} "
+            f"so family-wise NAS covers each family at least once."
+        )
+        effective_total = len(families)
+
+    if strategy == "adaptive_family_wise":
+        return {
+            "strategy": strategy,
+            "families": families,
+            "plan": None,
+            "requested_candidates": requested_total,
+            "effective_candidates": effective_total,
+            "min_candidates_per_family": 1,
+        }
+
+    if strategy == "evolutionary_guided":
+        return {
+            "strategy": strategy,
+            "families": families,
+            "plan": None,
+            "requested_candidates": requested_total,
+            "effective_candidates": effective_total,
+            "seed_population": "fixed_anchor_plus_mutation",
+            "parent_pool": int(max(1, getattr(args, "nas_evo_parent_pool", 3))),
+            "anchor_ratio": float(max(0.0, min(1.0, getattr(args, "nas_evo_anchor_ratio", 0.2)))),
+            "mutation_steps": int(max(1, getattr(args, "nas_evo_mutation_steps", 2))),
+            "cross_family_ratio": float(max(0.0, min(1.0, getattr(args, "nas_evo_cross_family_ratio", 0.5)))),
+            "random_ratio": float(max(0.0, min(1.0, getattr(args, "nas_evo_random_ratio", 0.2)))),
+        }
+
+    base = effective_total // len(families)
+    remainder = effective_total % len(families)
+    plan = []
+    for idx, family in enumerate(families):
+        count = base + (1 if idx < remainder else 0)
+        if count > 0:
+            plan.append((family, count))
+
+    return {
+        "strategy": strategy,
+        "families": families,
+        "plan": plan,
+        "requested_candidates": requested_total,
+        "effective_candidates": effective_total,
+    }
+
+
+def _rank_adaptive_families(families, current_scores, history_scores):
+    ranked = []
+    for family in families:
+        cur = current_scores.get(family)
+        hist = history_scores.get(family)
+        if cur is not None and hist is not None:
+            blended = 0.7 * float(cur) + 0.3 * float(hist)
+        elif cur is not None:
+            blended = float(cur)
+        elif hist is not None:
+            blended = float(hist)
+        else:
+            blended = float("inf")
+        ranked.append((blended, family))
+    ranked.sort(key=lambda item: item[0])
+    return [family for _, family in ranked]
+
+
+def _build_adaptive_extra_family_order(families, remaining_budget, current_scores, history_scores):
+    if remaining_budget <= 0:
+        return []
+    ranked_families = _rank_adaptive_families(families, current_scores, history_scores)
+    extras = []
+    while len(extras) < remaining_budget:
+        for family in ranked_families:
+            if len(extras) >= remaining_budget:
+                break
+            extras.append(family)
+    return ranked_families, extras
+
+
+def _update_family_history_scores(history_scores, current_scores, momentum=0.5):
+    updated = dict(history_scores)
+    for family, score in current_scores.items():
+        score = float(score)
+        prev = updated.get(family)
+        updated[family] = score if prev is None else (momentum * float(prev) + (1.0 - momentum) * score)
+    return updated
+
+
+def _sample_random_arch_for_families(families):
+    if not families or families == ["mixed"]:
+        return sample_arch()
+    return sample_arch(seq_type=random.choice(list(families)))
+
+
+def _get_evolutionary_seed_arches(in_ch: int, families):
+    base_arches = get_base_arches(in_ch=in_ch)
+    ordered = []
+    for family in families:
+        for name, cfg in base_arches:
+            if cfg.seq_type == family:
+                ordered.append((name, clone_arch(cfg)))
+                break
+    return ordered
+
+
+def _dedupe_population_records(records):
+    best_by_arch = {}
+    for rec in records:
+        key = str(rec["arch_cfg"])
+        prev = best_by_arch.get(key)
+        if prev is None or float(rec["score"]) < float(prev["score"]):
+            best_by_arch[key] = rec
+    ordered = list(best_by_arch.values())
+    ordered.sort(key=lambda item: (float(item["score"]), str(item["arch_cfg"])))
+    return ordered
+
+
+def _select_evolutionary_parents(records, parent_pool, families):
+    ordered = _dedupe_population_records(records)
+    if not ordered:
+        return []
+
+    family_best = {}
+    for rec in ordered:
+        family_best.setdefault(rec["family"], rec)
+
+    selected = []
+    used = set()
+    for family in families:
+        rec = family_best.get(family)
+        if rec is None:
+            continue
+        key = str(rec["arch_cfg"])
+        if key in used:
+            continue
+        selected.append(rec)
+        used.add(key)
+        if len(selected) >= parent_pool:
+            return selected
+
+    for rec in ordered:
+        key = str(rec["arch_cfg"])
+        if key in used:
+            continue
+        selected.append(rec)
+        used.add(key)
+        if len(selected) >= parent_pool:
+            break
+    return selected
+
+
+def _family_count_from_specs(specs, families):
+    counts = {family: 0 for family in families}
+    for spec in specs:
+        fam = spec.get("family_name")
+        if fam in counts:
+            counts[fam] += 1
+    return counts
+
+
+def _least_represented_family(specs, families, *, exclude=None):
+    exclude = set(exclude or [])
+    counts = _family_count_from_specs(specs, families)
+    candidates = [family for family in families if family not in exclude]
+    if not candidates:
+        candidates = list(families)
+    candidates.sort(key=lambda family: (counts.get(family, 0), family))
+    return candidates[0]
+
+
+def _shuffle_seed_arches(seed_arches, seed_value):
+    ordered = list(seed_arches)
+    rng = random.Random(seed_value)
+    rng.shuffle(ordered)
+    return ordered
+
+
+def build_evolutionary_candidate_specs(*, iter_id, total_candidates, in_ch, args, families, population_records):
+    specs = []
+    seen_arches = set()
+    anchor_ratio = float(max(0.0, min(1.0, getattr(args, "nas_evo_anchor_ratio", 0.2))))
+    cross_family_ratio = float(max(0.0, min(1.0, getattr(args, "nas_evo_cross_family_ratio", 0.5))))
+    random_budget = 0
+    if total_candidates > 1:
+        random_budget = int(round(float(args.nas_evo_random_ratio) * total_candidates))
+        if float(args.nas_evo_random_ratio) > 0.0 and total_candidates >= 4:
+            random_budget = max(1, random_budget)
+        random_budget = min(max(0, total_candidates - 1), random_budget)
+
+    seed_arches = _shuffle_seed_arches(
+        _get_evolutionary_seed_arches(in_ch, families),
+        seed_value=int(getattr(args, "seed", 42)) + int(iter_id),
+    )
+    anchor_budget = 0
+    if total_candidates > 0 and seed_arches:
+        anchor_budget = int(round(anchor_ratio * total_candidates))
+        if anchor_ratio > 0.0:
+            anchor_budget = max(1, anchor_budget)
+        anchor_budget = min(len(seed_arches), anchor_budget, total_candidates)
+    mutation_budget = max(0, total_candidates - random_budget - anchor_budget)
+    if total_candidates > 1 and mutation_budget == 0:
+        if anchor_budget > 0:
+            anchor_budget -= 1
+        elif random_budget > 0:
+            random_budget -= 1
+        mutation_budget = max(0, total_candidates - random_budget - anchor_budget)
+
+    def append_spec(arch_cfg, stage, *, parent=None, seed_name=None):
+        key = str(arch_cfg)
+        if key in seen_arches:
+            return False
+        spec = {
+            "arch_cfg": clone_arch(arch_cfg),
+            "family_name": arch_cfg.seq_type,
+            "sampling_stage": stage,
+            "parent_arch": None if parent is None else str(parent["arch_cfg"]),
+            "parent_score": None if parent is None else float(parent["score"]),
+            "parent_family": None if parent is None else str(parent["family"]),
+            "seed_name": seed_name,
+        }
+        specs.append(spec)
+        seen_arches.add(key)
+        return True
+
+    if iter_id == 0 or not population_records:
+        for seed_name, arch_cfg in seed_arches[:anchor_budget]:
+            if len(specs) >= total_candidates:
+                break
+            append_spec(arch_cfg, "anchor_seed", seed_name=seed_name)
+
+        anchor_parents = [
+            {"arch_cfg": clone_arch(cfg), "family": cfg.seq_type, "score": float("inf")}
+            for _, cfg in seed_arches
+        ]
+        mutate_target = anchor_budget + mutation_budget
+        cross_mutation_budget = int(round(cross_family_ratio * mutation_budget))
+        attempts = 0
+        while len(specs) < mutate_target and anchor_parents and attempts < total_candidates * 12:
+            target_family = _least_represented_family(specs, families)
+            parent = next((rec for rec in anchor_parents if rec["family"] == target_family), None)
+            if parent is None:
+                parent = anchor_parents[attempts % len(anchor_parents)]
+            seed_name = next(
+                (name for name, cfg in seed_arches if cfg.seq_type == parent["family"]),
+                seed_arches[attempts % len(seed_arches)][0],
+            )
+            force_cross = attempts < cross_mutation_budget and len(families) > 1
+            if force_cross:
+                target_family = _least_represented_family(specs, families, exclude={parent["family"]})
+            child = mutate_arch(
+                parent["arch_cfg"],
+                allowed_families=families,
+                mutation_steps=args.nas_evo_mutation_steps + (1 if force_cross else 0),
+                target_family=target_family,
+                force_family_change=force_cross,
+            )
+            append_spec(
+                child,
+                "anchor_cross_family_mutation" if force_cross else "anchor_mutation_balanced",
+                parent=parent,
+                seed_name=seed_name,
+            )
+            attempts += 1
+    else:
+        parents = _select_evolutionary_parents(population_records, args.nas_evo_parent_pool, families)
+        mutate_target = mutation_budget
+        cross_mutation_budget = int(round(cross_family_ratio * mutate_target))
+        attempts = 0
+        family_parent_map = {}
+        for parent in parents:
+            family_parent_map.setdefault(parent["family"], parent)
+
+        for family in families:
+            if len(specs) >= mutate_target:
+                break
+            parent = family_parent_map.get(family)
+            if parent is None:
+                continue
+            child = mutate_arch(
+                parent["arch_cfg"],
+                allowed_families=families,
+                mutation_steps=args.nas_evo_mutation_steps,
+                target_family=family,
+            )
+            append_spec(child, "evo_family_balanced_mutation", parent=parent)
+        while len(specs) < mutate_target and parents and attempts < total_candidates * 20:
+            parent = parents[attempts % len(parents)]
+            force_cross = attempts < cross_mutation_budget and len(families) > 1
+            target_family = _least_represented_family(
+                specs,
+                families,
+                exclude={parent["family"]} if force_cross else None,
+            )
+            child = mutate_arch(
+                parent["arch_cfg"],
+                allowed_families=families,
+                mutation_steps=args.nas_evo_mutation_steps + (1 if force_cross else 0),
+                target_family=target_family,
+                force_family_change=force_cross,
+            )
+            append_spec(
+                child,
+                "evo_cross_family_mutation" if force_cross else "evo_mutation_balanced",
+                parent=parent,
+            )
+            attempts += 1
+
+        if not specs:
+            for seed_name, arch_cfg in seed_arches[:max(1, anchor_budget)]:
+                if len(specs) >= total_candidates:
+                    break
+                append_spec(arch_cfg, "anchor_fallback", seed_name=seed_name)
+
+    random_attempts = 0
+    while len(specs) < total_candidates and random_attempts < total_candidates * 20:
+        target_family = _least_represented_family(specs, families)
+        append_spec(sample_arch(seq_type=target_family), "evo_random_explore")
+        random_attempts += 1
+
+    if len(specs) < total_candidates and seed_arches:
+        fallback_attempts = 0
+        while len(specs) < total_candidates and fallback_attempts < total_candidates * 20:
+            seed_name, parent_arch = seed_arches[fallback_attempts % len(seed_arches)]
+            target_family = _least_represented_family(specs, families)
+            child = mutate_arch(
+                parent_arch,
+                allowed_families=families,
+                mutation_steps=max(1, int(args.nas_evo_mutation_steps)),
+                target_family=target_family,
+            )
+            append_spec(child, "evo_fallback_mutation", seed_name=seed_name)
+            fallback_attempts += 1
+
+    return specs[:total_candidates]
 
 
 # ---------------- Candidate model ----------------
@@ -383,7 +772,7 @@ class CandidateModel(torch.nn.Module):
 
 
 # ---------------- TS-TCC feature extractor ----------------
-def extract_features(trainer, X, device, batch_size=256):
+def extract_features(trainer, X, device, batch_size=32):
     """
     Use TS-TCC encoder outputs z: [B, C, T], apply GAP over time -> [B, C]
     """
@@ -467,7 +856,7 @@ def initialize_candidate_from_tstcc(cand, tstcc_backbone):
 
 
 @torch.no_grad()
-def extract_candidate_features(cand, X_np, device, batch_size=256):
+def extract_candidate_features(cand, X_np, device, batch_size=32):
     cand.eval()
     feats = []
     dl = DataLoader(ArrayDataset(X_np), batch_size=batch_size, shuffle=False)
@@ -516,14 +905,59 @@ def normalize_optional_limit(max_fit):
     return max_fit if max_fit > 0 else None
 
 
-def build_oneclass_config(args, *, epochs=None, warmup_epochs=None, max_fit=None):
+def resolve_search_oneclass_method(args):
+    return str(getattr(args, "oneclass_method", "deepsvdd"))
+
+
+def resolve_weighting_oneclass_method(args):
+    method = getattr(args, "weighting_oneclass_method", None)
+    return str(method) if method else resolve_search_oneclass_method(args)
+
+
+def resolve_final_oneclass_method(args):
+    method = getattr(args, "final_oneclass_method", None)
+    return str(method) if method else resolve_search_oneclass_method(args)
+
+
+def build_oneclass_config(args, *, method=None, epochs=None, warmup_epochs=None, max_fit=None):
+    resolved_method = resolve_search_oneclass_method(args) if method is None else str(method)
     return OneClassConfig(
-        method=args.oneclass_method,
+        method=resolved_method,
         epochs=int(args.oneclass_epochs if epochs is None else epochs),
         lr=float(args.oneclass_lr),
         batch_size=int(args.oneclass_batch_size),
         max_fit=normalize_optional_limit(args.oneclass_max_fit if max_fit is None else max_fit),
         knn_k=int(args.knn_k),
+        iforest_n_estimators=int(args.iforest_n_estimators),
+        iforest_max_samples=str(args.iforest_max_samples),
+        iforest_contamination=str(args.iforest_contamination),
+        iforest_max_features=float(args.iforest_max_features),
+        lof_hidden_dim=int(args.lof_hidden_dim),
+        lof_rep_dim=int(args.lof_rep_dim),
+        lof_n_neighbors=int(args.lof_n_neighbors),
+        lof_metric=str(args.lof_metric),
+        lof_p=int(args.lof_p),
+        flow_hidden_dim=int(args.flow_hidden_dim),
+        flow_rep_dim=int(args.flow_rep_dim),
+        flow_layers=int(args.flow_layers),
+        flow_warmup_epochs=int(args.flow_warmup_epochs),
+        flow_scale_clip=float(args.flow_scale_clip),
+        dagmm_hidden_dim=int(args.dagmm_hidden_dim),
+        dagmm_latent_dim=int(args.dagmm_latent_dim),
+        dagmm_est_hidden_dim=int(args.dagmm_est_hidden_dim),
+        dagmm_components=int(args.dagmm_components),
+        dagmm_lambda_energy=float(args.dagmm_lambda_energy),
+        dagmm_lambda_cov_diag=float(args.dagmm_lambda_cov_diag),
+        dagmm_warmup_epochs=int(args.dagmm_warmup_epochs),
+        drocc_hidden_dim=int(args.drocc_hidden_dim),
+        drocc_rep_dim=int(args.drocc_rep_dim),
+        drocc_radius=float(args.drocc_radius),
+        drocc_gamma=float(args.drocc_gamma),
+        drocc_adv_steps=int(args.drocc_adv_steps),
+        drocc_adv_step_size=float(args.drocc_adv_step_size),
+        drocc_warmup_epochs=int(args.drocc_warmup_epochs),
+        drocc_adv_weight=float(args.drocc_adv_weight),
+        drocc_compactness_weight=float(args.drocc_compactness_weight),
         ocsvm_nu=float(args.ocsvm_nu),
         ocsvm_kernel=str(args.ocsvm_kernel),
         ocsvm_gamma=str(args.ocsvm_gamma),
@@ -579,8 +1013,181 @@ def robust_sigmoid_weights(raw, tau=1.0, w_min=0.05):
     return w
 
 
+def apply_top_keep_ratio(weights, top_keep_ratio=1.0):
+    weights = np.asarray(weights, dtype=np.float32).copy()
+    n = int(len(weights))
+    if n == 0:
+        return weights, {
+            "requested_top_keep_ratio": float(top_keep_ratio),
+            "effective_top_keep_ratio": 1.0,
+            "keep_count": 0,
+            "dropped_count": 0,
+            "active_fraction": 0.0,
+        }
+
+    keep_ratio = float(np.clip(float(top_keep_ratio), 0.0, 1.0))
+    if keep_ratio >= 1.0:
+        keep_mask = np.ones(n, dtype=bool)
+        keep_count = n
+    else:
+        keep_count = max(1, int(np.ceil(n * keep_ratio)))
+        order = np.argsort(-weights, kind="stable")
+        keep_mask = np.zeros(n, dtype=bool)
+        keep_mask[order[:keep_count]] = True
+        weights[~keep_mask] = 0.0
+
+    return weights.astype(np.float32), {
+        "requested_top_keep_ratio": float(top_keep_ratio),
+        "effective_top_keep_ratio": float(keep_count / max(1, n)),
+        "keep_count": int(keep_count),
+        "dropped_count": int(n - keep_count),
+        "active_fraction": float(np.count_nonzero(weights > 0.0) / max(1, n)),
+    }
+
+
+def summarize_array_stats(values):
+    arr = np.asarray(values, dtype=np.float32).reshape(-1)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return {
+            "count": 0,
+            "mean": None,
+            "min": None,
+            "max": None,
+            "q25": None,
+            "median": None,
+            "q75": None,
+        }
+    return {
+        "count": int(arr.size),
+        "mean": float(arr.mean()),
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "q25": float(np.percentile(arr, 25)),
+        "median": float(np.percentile(arr, 50)),
+        "q75": float(np.percentile(arr, 75)),
+    }
+
+
+def compute_target_reliability_weights(
+    cand,
+    X_source_norm,
+    X_target_pool,
+    *,
+    device,
+    oneclass_cfg: OneClassConfig,
+    seed=42,
+    tau=1.0,
+    w_min=0.05,
+    top_keep_ratio=1.0,
+):
+    if X_target_pool is None or len(X_target_pool) == 0:
+        return {
+            "weights": np.zeros((0,), dtype=np.float32),
+            "keep_stats": {
+                "requested_top_keep_ratio": float(top_keep_ratio),
+                "effective_top_keep_ratio": 0.0,
+                "keep_count": 0,
+                "dropped_count": 0,
+                "active_fraction": 0.0,
+            },
+            "backend": None,
+            "backend_summary": None,
+            "raw_score_stats": summarize_array_stats([]),
+            "source_fit_count": int(len(X_source_norm)),
+        }
+    cand.eval()
+    _set_requires_grad(cand, False)
+    Xs_fit = subsample_array(X_source_norm, oneclass_cfg.max_fit, seed=seed)
+    Fs = extract_candidate_features(cand, Xs_fit, device=device, batch_size=256)
+    backend = fit_oneclass_on_features(Fs, device=device, oneclass_cfg=oneclass_cfg, seed=seed)
+    raw = score_candidate_oneclass_stream(
+        cand,
+        backend,
+        X_target_pool,
+        device=device,
+        batch_size=256,
+    )
+    weights = robust_sigmoid_weights(raw, tau=tau, w_min=w_min)
+    weights, keep_stats = apply_top_keep_ratio(weights, top_keep_ratio=top_keep_ratio)
+    return {
+        "weights": weights,
+        "keep_stats": keep_stats,
+        "backend": backend,
+        "backend_summary": backend.summary(),
+        "raw_score_stats": summarize_array_stats(raw),
+        "source_fit_count": int(len(Xs_fit)),
+    }
+
+
+def split_reliability_extremes(weights, frac=0.3):
+    weights = np.asarray(weights, dtype=np.float32)
+    n = int(len(weights))
+    if n <= 0:
+        return np.array([], dtype=np.int64), np.array([], dtype=np.int64)
+    if n == 1:
+        idx = np.array([0], dtype=np.int64)
+        return idx, idx
+
+    frac = float(np.clip(float(frac), 1e-6, 0.5))
+    k = max(1, min(int(np.ceil(n * frac)), n // 2))
+    order = np.argsort(weights, kind="stable")
+    low_idx = order[:k]
+    high_idx = order[-k:]
+    return low_idx.astype(np.int64), high_idx.astype(np.int64)
+
+
+def compute_score_proxy_objective(
+    cand,
+    X_source_fit,
+    X_source_eval,
+    X_target_pool,
+    w_target,
+    device,
+    oneclass_cfg: OneClassConfig,
+    seed=42,
+    reliability_frac=0.3,
+):
+    backend, _, _ = fit_final_oneclass_backend(
+        cand,
+        X_train_norm=X_source_fit,
+        device=device,
+        oneclass_cfg=oneclass_cfg,
+        seed=seed,
+    )
+
+    src_scores = score_candidate_oneclass_stream(cand, backend, X_source_eval, device=device, batch_size=256)
+    tgt_scores = score_candidate_oneclass_stream(cand, backend, X_target_pool, device=device, batch_size=256)
+    w_target = np.asarray(w_target, dtype=np.float32)
+
+    low_idx, high_idx = split_reliability_extremes(w_target, frac=reliability_frac)
+    src_mean = float(np.mean(src_scores)) if len(src_scores) else 0.0
+    src_std = float(np.std(src_scores)) if len(src_scores) else 0.0
+    tgt_all_mean = float(np.mean(tgt_scores)) if len(tgt_scores) else 0.0
+    tgt_high_mean = float(np.mean(tgt_scores[high_idx])) if len(high_idx) else tgt_all_mean
+    tgt_low_mean = float(np.mean(tgt_scores[low_idx])) if len(low_idx) else tgt_all_mean
+    tgt_separation = float(tgt_low_mean - tgt_high_mean)
+    score_proxy_obj = float(src_mean + 0.5 * src_std + tgt_high_mean - 0.5 * tgt_separation)
+
+    return {
+        "score_proxy_obj": score_proxy_obj,
+        "src_mean": src_mean,
+        "src_std": src_std,
+        "tgt_all_mean": tgt_all_mean,
+        "tgt_high_mean": tgt_high_mean,
+        "tgt_low_mean": tgt_low_mean,
+        "tgt_separation": tgt_separation,
+        "source_eval_count": int(len(src_scores)),
+        "target_count": int(len(tgt_scores)),
+        "target_high_count": int(len(high_idx)),
+        "target_low_count": int(len(low_idx)),
+        "reliability_frac": float(reliability_frac),
+        "score_name": str(backend.score_name),
+    }
+
+
 @torch.no_grad()
-def score_candidate_oneclass_stream(cand, backend, X_np, device, batch_size=256):
+def score_candidate_oneclass_stream(cand, backend, X_np, device, batch_size=32):
     cand.eval()
     backend.eval()
     scores = []
@@ -697,12 +1304,418 @@ def get_base_arches(in_ch: int):
     return bases
 
 
+def update_unique_nas_candidate_pool(
+    candidate_pool: dict,
+    arch_cfg,
+    upper_obj: float,
+    score_proxy_obj=None,
+    score_proxy_stats=None,
+    *,
+    iter_id: int,
+    search_family: str,
+    sampling_stage: str,
+):
+    arch_key = str(arch_cfg)
+    rec = candidate_pool.get(arch_key)
+    if rec is None:
+        candidate_pool[arch_key] = {
+            "arch": arch_key,
+            "arch_cfg": arch_cfg,
+            "upper_obj": float(upper_obj),
+            "best_iter": int(iter_id),
+            "search_family": str(search_family),
+            "sampling_stage": str(sampling_stage),
+            "score_proxy_obj": None if score_proxy_obj is None else float(score_proxy_obj),
+            "proxy_best_iter": int(iter_id) if score_proxy_obj is not None else None,
+            "proxy_search_family": str(search_family) if score_proxy_obj is not None else None,
+            "proxy_sampling_stage": str(sampling_stage) if score_proxy_obj is not None else None,
+            "score_proxy_stats": dict(score_proxy_stats or {}),
+            "seen_count": 1,
+        }
+        return
+
+    rec["seen_count"] = int(rec.get("seen_count", 1)) + 1
+    if float(upper_obj) < float(rec["upper_obj"]):
+        rec["arch_cfg"] = arch_cfg
+        rec["upper_obj"] = float(upper_obj)
+        rec["best_iter"] = int(iter_id)
+        rec["search_family"] = str(search_family)
+        rec["sampling_stage"] = str(sampling_stage)
+    if score_proxy_obj is not None:
+        prev_proxy = rec.get("score_proxy_obj")
+        if prev_proxy is None or float(score_proxy_obj) < float(prev_proxy):
+            rec["score_proxy_obj"] = float(score_proxy_obj)
+            rec["proxy_best_iter"] = int(iter_id)
+            rec["proxy_search_family"] = str(search_family)
+            rec["proxy_sampling_stage"] = str(sampling_stage)
+            rec["score_proxy_stats"] = dict(score_proxy_stats or {})
+
+
+def build_nas_final_candidates(
+    best_arch,
+    candidate_pool: dict,
+    topk: int,
+    proxy_topk: int = 0,
+    diverse_per_family: int = 0,
+    fusion_topk: int = 0,
+    fusion_upper_weight: float = 1.0,
+    fusion_proxy_weight: float = 1.0,
+):
+    records = sorted(
+        candidate_pool.values(),
+        key=lambda item: (float(item["upper_obj"]), str(item["arch"])),
+    )
+    if not records:
+        return [("NAS_BestArch", best_arch)], {}, [], [], []
+
+    topk = max(1, min(int(topk), len(records)))
+    proxy_topk = max(0, min(int(proxy_topk), len(records)))
+    fusion_topk = max(0, min(int(fusion_topk), len(records)))
+    best_arch_key = str(best_arch)
+    final_arches = [("NAS_BestArch", best_arch)]
+    seen_arch_keys = {best_arch_key}
+    meta_by_name = {}
+    public_records = []
+    proxy_records = []
+    family_records = []
+    fusion_records = []
+
+    upper_rank_map = {
+        str(rec["arch"]): int(rank)
+        for rank, rec in enumerate(records, start=1)
+    }
+    proxy_sorted_records = [
+        rec for rec in candidate_pool.values()
+        if rec.get("score_proxy_obj") is not None
+    ]
+    proxy_sorted_records.sort(
+        key=lambda item: (float(item["score_proxy_obj"]), str(item["arch"]))
+    )
+    proxy_rank_map = {
+        str(rec["arch"]): int(rank)
+        for rank, rec in enumerate(proxy_sorted_records, start=1)
+    }
+    fusion_sorted_records = []
+    fusion_upper_weight = float(fusion_upper_weight)
+    fusion_proxy_weight = float(fusion_proxy_weight)
+    upper_rank_denom = float(max(1, len(records)))
+    proxy_rank_denom = float(max(1, len(proxy_sorted_records)))
+    default_proxy_rank = int(len(proxy_sorted_records) + 1)
+    for rec in candidate_pool.values():
+        arch_key = str(rec["arch"])
+        upper_rank = int(upper_rank_map.get(arch_key, len(records) + 1))
+        proxy_rank = int(proxy_rank_map.get(arch_key, default_proxy_rank))
+        fusion_score = (
+            fusion_upper_weight * (float(upper_rank) / upper_rank_denom)
+            + fusion_proxy_weight * (float(proxy_rank) / proxy_rank_denom)
+        )
+        fusion_sorted_records.append((float(fusion_score), rec))
+    fusion_sorted_records.sort(key=lambda item: (float(item[0]), str(item[1]["arch"])))
+    fusion_rank_map = {
+        str(rec["arch"]): int(rank)
+        for rank, (_, rec) in enumerate(fusion_sorted_records, start=1)
+    }
+    fusion_score_map = {
+        str(rec["arch"]): float(score)
+        for score, rec in fusion_sorted_records
+    }
+
+    for rank, rec in enumerate(records, start=1):
+        public_rec = {
+            "arch": str(rec["arch"]),
+            "upper_obj": float(rec["upper_obj"]),
+            "upper_rank": int(rank),
+            "score_proxy_obj": (
+                None if rec.get("score_proxy_obj") is None else float(rec["score_proxy_obj"])
+            ),
+            "proxy_rank": proxy_rank_map.get(str(rec["arch"])),
+            "fusion_score": fusion_score_map.get(str(rec["arch"])),
+            "fusion_rank": fusion_rank_map.get(str(rec["arch"])),
+            "best_iter": int(rec["best_iter"]),
+            "search_family": str(rec["search_family"]),
+            "sampling_stage": str(rec["sampling_stage"]),
+            "proxy_best_iter": rec.get("proxy_best_iter"),
+            "proxy_search_family": rec.get("proxy_search_family"),
+            "proxy_sampling_stage": rec.get("proxy_sampling_stage"),
+            "seen_count": int(rec.get("seen_count", 1)),
+        }
+        public_rec.update(dict(rec.get("score_proxy_stats") or {}))
+        public_records.append(public_rec)
+
+        if str(rec["arch"]) == best_arch_key:
+            meta_by_name["NAS_BestArch"] = dict(public_rec)
+            meta_by_name["NAS_BestArch"]["is_upper_best_alias"] = True
+            meta_by_name["NAS_BestArch"]["is_proxy_alias"] = False
+
+        if rank > topk or str(rec["arch"]) == best_arch_key:
+            continue
+
+        arch_name = f"NAS_TopK_{rank:02d}"
+        final_arches.append((arch_name, rec["arch_cfg"]))
+        seen_arch_keys.add(str(rec["arch"]))
+        meta_by_name[arch_name] = dict(public_rec)
+        meta_by_name[arch_name]["is_upper_best_alias"] = False
+        meta_by_name[arch_name]["is_proxy_alias"] = False
+
+    if diverse_per_family > 0:
+        family_counters = {}
+        for rec in records:
+            arch_key = str(rec["arch"])
+            if arch_key in seen_arch_keys:
+                continue
+            family_name = str(rec.get("search_family") or getattr(rec.get("arch_cfg"), "seq_type", "unknown"))
+            family_count = int(family_counters.get(family_name, 0))
+            if family_count >= diverse_per_family:
+                continue
+
+            family_counters[family_name] = family_count + 1
+            public_rec = {
+                "arch": arch_key,
+                "upper_obj": float(rec["upper_obj"]),
+                "upper_rank": upper_rank_map.get(arch_key),
+                "score_proxy_obj": (
+                    None if rec.get("score_proxy_obj") is None else float(rec["score_proxy_obj"])
+                ),
+                "proxy_rank": proxy_rank_map.get(arch_key),
+                "fusion_score": fusion_score_map.get(arch_key),
+                "fusion_rank": fusion_rank_map.get(arch_key),
+                "best_iter": int(rec["best_iter"]),
+                "search_family": str(rec["search_family"]),
+                "sampling_stage": str(rec["sampling_stage"]),
+                "proxy_best_iter": rec.get("proxy_best_iter"),
+                "proxy_search_family": rec.get("proxy_search_family"),
+                "proxy_sampling_stage": rec.get("proxy_sampling_stage"),
+                "seen_count": int(rec.get("seen_count", 1)),
+                "family_diverse_rank": int(family_counters[family_name]),
+            }
+            public_rec.update(dict(rec.get("score_proxy_stats") or {}))
+            family_records.append(public_rec)
+
+            arch_name = f"NAS_FamilyTop_{family_name.upper()}_{family_counters[family_name]:02d}"
+            final_arches.append((arch_name, rec["arch_cfg"]))
+            seen_arch_keys.add(arch_key)
+            meta_by_name[arch_name] = dict(public_rec)
+            meta_by_name[arch_name]["is_upper_best_alias"] = False
+            meta_by_name[arch_name]["is_proxy_alias"] = False
+            meta_by_name[arch_name]["is_family_diverse_alias"] = True
+
+    for rank, rec in enumerate(proxy_sorted_records, start=1):
+        public_rec = {
+            "arch": str(rec["arch"]),
+            "upper_obj": float(rec["upper_obj"]),
+            "upper_rank": upper_rank_map.get(str(rec["arch"])),
+            "score_proxy_obj": float(rec["score_proxy_obj"]),
+            "proxy_rank": int(rank),
+            "fusion_score": fusion_score_map.get(str(rec["arch"])),
+            "fusion_rank": fusion_rank_map.get(str(rec["arch"])),
+            "best_iter": int(rec["best_iter"]),
+            "search_family": str(rec["search_family"]),
+            "sampling_stage": str(rec["sampling_stage"]),
+            "proxy_best_iter": rec.get("proxy_best_iter"),
+            "proxy_search_family": rec.get("proxy_search_family"),
+            "proxy_sampling_stage": rec.get("proxy_sampling_stage"),
+            "seen_count": int(rec.get("seen_count", 1)),
+        }
+        public_rec.update(dict(rec.get("score_proxy_stats") or {}))
+        proxy_records.append(public_rec)
+
+        if rank > proxy_topk or str(rec["arch"]) in seen_arch_keys:
+            continue
+
+        arch_name = f"NAS_ProxyTopK_{rank:02d}"
+        final_arches.append((arch_name, rec["arch_cfg"]))
+        seen_arch_keys.add(str(rec["arch"]))
+        meta_by_name[arch_name] = dict(public_rec)
+        meta_by_name[arch_name]["is_upper_best_alias"] = False
+        meta_by_name[arch_name]["is_proxy_alias"] = True
+
+    for rank, (fusion_score, rec) in enumerate(fusion_sorted_records, start=1):
+        public_rec = {
+            "arch": str(rec["arch"]),
+            "upper_obj": float(rec["upper_obj"]),
+            "upper_rank": upper_rank_map.get(str(rec["arch"])),
+            "score_proxy_obj": (
+                None if rec.get("score_proxy_obj") is None else float(rec["score_proxy_obj"])
+            ),
+            "proxy_rank": proxy_rank_map.get(str(rec["arch"])),
+            "fusion_score": float(fusion_score),
+            "fusion_rank": int(rank),
+            "best_iter": int(rec["best_iter"]),
+            "search_family": str(rec["search_family"]),
+            "sampling_stage": str(rec["sampling_stage"]),
+            "proxy_best_iter": rec.get("proxy_best_iter"),
+            "proxy_search_family": rec.get("proxy_search_family"),
+            "proxy_sampling_stage": rec.get("proxy_sampling_stage"),
+            "seen_count": int(rec.get("seen_count", 1)),
+        }
+        public_rec.update(dict(rec.get("score_proxy_stats") or {}))
+        fusion_records.append(public_rec)
+
+        if rank > fusion_topk or str(rec["arch"]) in seen_arch_keys:
+            continue
+
+        arch_name = f"NAS_FusionTopK_{rank:02d}"
+        final_arches.append((arch_name, rec["arch_cfg"]))
+        seen_arch_keys.add(str(rec["arch"]))
+        meta_by_name[arch_name] = dict(public_rec)
+        meta_by_name[arch_name]["is_upper_best_alias"] = False
+        meta_by_name[arch_name]["is_proxy_alias"] = False
+        meta_by_name[arch_name]["is_fusion_alias"] = True
+
+    if "NAS_BestArch" not in meta_by_name:
+        meta_by_name["NAS_BestArch"] = {
+            "arch": best_arch_key,
+            "upper_obj": None,
+            "upper_rank": None,
+            "score_proxy_obj": None,
+            "proxy_rank": None,
+            "fusion_score": None,
+            "fusion_rank": None,
+            "best_iter": None,
+            "search_family": None,
+            "sampling_stage": None,
+            "proxy_best_iter": None,
+            "proxy_search_family": None,
+            "proxy_sampling_stage": None,
+            "seen_count": None,
+            "is_upper_best_alias": True,
+            "is_proxy_alias": False,
+            "is_family_diverse_alias": False,
+            "is_fusion_alias": False,
+        }
+    else:
+        meta_by_name["NAS_BestArch"]["is_family_diverse_alias"] = False
+        meta_by_name["NAS_BestArch"]["is_fusion_alias"] = False
+
+    return (
+        final_arches,
+        meta_by_name,
+        public_records[:topk],
+        proxy_records[:proxy_topk],
+        family_records,
+        fusion_records[:fusion_topk],
+    )
+
+
+def _corr_pearson(xs, ys):
+    xs = np.asarray(xs, dtype=np.float64)
+    ys = np.asarray(ys, dtype=np.float64)
+    if xs.size < 2 or ys.size < 2:
+        return None
+    if not np.all(np.isfinite(xs)) or not np.all(np.isfinite(ys)):
+        return None
+    if np.allclose(xs, xs[0]) or np.allclose(ys, ys[0]):
+        return None
+    return float(np.corrcoef(xs, ys)[0, 1])
+
+
+def _rankdata_average(values):
+    values = np.asarray(values, dtype=np.float64)
+    order = np.argsort(values, kind="mergesort")
+    ranks = np.zeros(len(values), dtype=np.float64)
+    i = 0
+    while i < len(values):
+        j = i + 1
+        while j < len(values) and values[order[j]] == values[order[i]]:
+            j += 1
+        avg_rank = 0.5 * (i + j - 1) + 1.0
+        ranks[order[i:j]] = avg_rank
+        i = j
+    return ranks
+
+
+def _corr_spearman(xs, ys):
+    xs = np.asarray(xs, dtype=np.float64)
+    ys = np.asarray(ys, dtype=np.float64)
+    if xs.size < 2 or ys.size < 2:
+        return None
+    return _corr_pearson(_rankdata_average(xs), _rankdata_average(ys))
+
+
+def summarize_nas_surrogate_alignment(results_baselines):
+    evaluated = []
+    seen_archs = set()
+    for entry in results_baselines:
+        arch_name = str(entry.get("arch_name") or "")
+        if not arch_name.startswith("NAS_"):
+            continue
+        meta = entry.get("nas_candidate") or {}
+        arch_key = str(meta.get("arch") or entry.get("arch") or arch_name)
+        if arch_key in seen_archs:
+            continue
+        seen_archs.add(arch_key)
+        selection_auroc = get_selection_auroc(entry)
+        report_auroc = (entry.get("metrics_uad") or {}).get("auroc")
+        evaluated.append({
+            "arch_name": arch_name,
+            "arch": arch_key,
+            "selection_auroc": None if selection_auroc is None else float(selection_auroc),
+            "report_auroc": None if report_auroc is None else float(report_auroc),
+            "upper_obj": meta.get("upper_obj"),
+            "upper_rank": meta.get("upper_rank"),
+            "score_proxy_obj": meta.get("score_proxy_obj"),
+            "proxy_rank": meta.get("proxy_rank"),
+            "fusion_score": meta.get("fusion_score"),
+            "fusion_rank": meta.get("fusion_rank"),
+        })
+
+    selection_ready = [
+        rec for rec in evaluated
+        if rec["selection_auroc"] is not None
+    ]
+    best_val_arch = None
+    if selection_ready:
+        best_val_arch = max(selection_ready, key=lambda rec: rec["selection_auroc"])["arch_name"]
+
+    def summarize_signal(signal_key):
+        ready = [
+            rec for rec in evaluated
+            if rec["selection_auroc"] is not None and rec.get(signal_key) is not None
+        ]
+        if len(ready) < 2:
+            return {
+                "n": len(ready),
+                "pearson_neg_obj_vs_val_auroc": None,
+                "spearman_neg_obj_vs_val_auroc": None,
+                "top1_arch": None,
+                "top1_matches_best_val": None,
+            }
+        xs = np.asarray([-float(rec[signal_key]) for rec in ready], dtype=np.float64)
+        ys = np.asarray([float(rec["selection_auroc"]) for rec in ready], dtype=np.float64)
+        top1_arch = min(ready, key=lambda rec: float(rec[signal_key]))["arch_name"]
+        return {
+            "n": len(ready),
+            "pearson_neg_obj_vs_val_auroc": _corr_pearson(xs, ys),
+            "spearman_neg_obj_vs_val_auroc": _corr_spearman(xs, ys),
+            "top1_arch": top1_arch,
+            "top1_matches_best_val": (top1_arch == best_val_arch) if best_val_arch is not None else None,
+        }
+
+    return {
+        "selection_metric": "val_auroc",
+        "best_val_arch": best_val_arch,
+        "upper_obj": summarize_signal("upper_obj"),
+        "score_proxy_obj": summarize_signal("score_proxy_obj"),
+        "fusion_score": summarize_signal("fusion_score"),
+        "evaluated_candidates": evaluated,
+    }
+
+
+def get_selection_auroc(entry: dict, allow_report_fallback: bool = True):
+    selection_metrics = entry.get("selection_metrics_uad") or {}
+    value = selection_metrics.get("auroc")
+    if value is None and allow_report_fallback:
+        value = (entry.get("metrics_uad") or {}).get("auroc")
+    return float(value) if value is not None else None
+
+
 def run_final_only_option2(
     arch_name: str,
     arch_cfg,
     Xs, Ys, X_target_pool,
     X_source_holdout,
-    X_eval, Y_eval,
+    X_select, Y_select,
+    X_report, Y_report,
     args,
     device,
     in_ch,
@@ -710,25 +1723,36 @@ def run_final_only_option2(
     tstcc_backbone,
     seed,
     out_dir="outputs",
+    selection_name="val_mixed",
+    report_name="test_mixed",
 ):
     """
     FINAL-ONLY for combined mode:
       warmup on source -> freeze -> one-class model on forward_features (fit on source normal)
       -> weights on target_pool_unlabeled -> unlabeled bilevel final
-      -> fit one-class model on adapted source features -> eval on X_eval/Y_eval (test if provided else val)
+      -> fit one-class model on adapted source features
+      -> select best model on X_select/Y_select
+      -> report final metrics on X_report/Y_report
     """
+    search_oneclass_method = resolve_search_oneclass_method(args)
+    weighting_oneclass_method = resolve_weighting_oneclass_method(args)
+    final_oneclass_method = resolve_final_oneclass_method(args)
+
     weighting_cfg = build_oneclass_config(
         args,
+        method=weighting_oneclass_method,
         epochs=args.oneclass_epochs,
         warmup_epochs=args.svdd_warmup_epochs,
     )
     final_cfg = build_oneclass_config(
         args,
+        method=final_oneclass_method,
         epochs=args.oneclass_final_epochs,
         warmup_epochs=args.svdd_final_warmup_epochs,
     )
-    tau = 1.0
-    w_min = 0.05
+    tau = float(args.combined_weight_tau)
+    w_min = float(args.combined_weight_w_min)
+    top_keep_ratio = float(args.combined_weight_top_keep_ratio)
 
     model = CandidateModel(in_ch, arch_cfg, num_classes=2).to(device)
     initialize_candidate_from_tstcc(model, tstcc_backbone)
@@ -744,24 +1768,27 @@ def run_final_only_option2(
         lr=1e-3,
     )
 
-    _set_requires_grad(model, False)
-    Xs_fit = subsample_array(Xs, weighting_cfg.max_fit, seed=seed)
-    Fs = extract_candidate_features(model, Xs_fit, device=device, batch_size=256)
-    weighting_backend = fit_oneclass_on_features(Fs, device=device, oneclass_cfg=weighting_cfg, seed=seed)
-
-    raw = score_candidate_oneclass_stream(
+    weighting_result = compute_target_reliability_weights(
         model,
-        weighting_backend,
+        Xs,
         X_target_pool,
         device=device,
-        batch_size=256,
+        oneclass_cfg=weighting_cfg,
+        seed=seed,
+        tau=tau,
+        w_min=w_min,
+        top_keep_ratio=top_keep_ratio,
     )
-    w_ent = robust_sigmoid_weights(raw, tau=tau, w_min=w_min)
+    weighting_backend = weighting_result["backend"]
+    w_ent = weighting_result["weights"]
+    keep_stats = weighting_result["keep_stats"]
 
     print(
         f"[FINAL-ONLY][{arch_name}] weights: mean={w_ent.mean():.4f} "
         f"min={w_ent.min():.4f} max={w_ent.max():.4f} | "
-        f"tau={tau} w_min={w_min} method={weighting_cfg.method} score={weighting_backend.score_name}"
+        f"tau={tau} w_min={w_min} top_keep_ratio={top_keep_ratio} "
+        f"kept={keep_stats['keep_count']}/{len(w_ent)} | "
+        f"method={weighting_cfg.method} score={weighting_backend.score_name}"
     )
 
     _set_requires_grad(model, True)
@@ -791,62 +1818,66 @@ def run_final_only_option2(
         upper_beta_gap=args.combined_upper_gap,
     )
 
+    selection_metrics_uad = None
     metrics_uad = None
     final_backend_info = None
-    if X_eval is not None and Y_eval is not None:
-        scores, train_scores, final_backend_info = fit_final_oneclass_and_score(
+    if X_report is not None and Y_report is not None:
+        backend, train_scores, final_backend_info = fit_final_oneclass_backend(
             model,
             X_train_norm=Xs,
-            X_eval=X_eval,
             device=device,
             oneclass_cfg=final_cfg,
             seed=seed,
         )
-        ap, auroc = compute_ap_auroc(Y_eval, scores)
+        if X_select is not None and Y_select is not None:
+            scores_select = score_candidate_oneclass_stream(
+                model,
+                backend,
+                X_select,
+                device=device,
+                batch_size=256,
+            )
+            selection_metrics_uad = _generic_uad_metrics_from_scores(Y_select, scores_select, train_scores)
 
-        thr_pot = pot_threshold(train_scores, q=1e-3, level=0.99)
-        p_pot, r_pot, f1_pot = f1_at_threshold(Y_eval, scores, thr_pot)
-
-        f1_b, p_b, r_b, thr_b = best_f1(Y_eval, scores)
-
-        y_pred_bin = (scores >= thr_pot).astype(int)
-        ev = event_f1_and_delay(Y_eval, y_pred_bin)
-
-        metrics_uad = {
-            "ap": float(ap),
-            "auroc": float(auroc),
-            "f1_pot": float(f1_pot),
-            "precision_pot": float(p_pot),
-            "recall_pot": float(r_pot),
-            "thr_pot": float(thr_pot),
-            "f1_best": float(f1_b),
-            "precision_best": float(p_b),
-            "recall_best": float(r_b),
-            "thr_best": float(thr_b),
-            "event_f1": float(ev["event_f1"]),
-            "event_precision": float(ev["event_precision"]),
-            "event_recall": float(ev["event_recall"]),
-            "delay_mean": float(ev["delay_mean"]),
-            "delay_median": float(ev["delay_median"]),
-        }
+            if X_report is X_select and Y_report is Y_select:
+                metrics_uad = dict(selection_metrics_uad) if selection_metrics_uad is not None else None
+        if metrics_uad is None:
+            scores_report = score_candidate_oneclass_stream(
+                model,
+                backend,
+                X_report,
+                device=device,
+                batch_size=256,
+            )
+            metrics_uad = _generic_uad_metrics_from_scores(Y_report, scores_report, train_scores)
 
     return {
         "arch_name": arch_name,
         "arch": str(arch_cfg),
+        "selection_split": selection_name,
+        "report_split": report_name,
+        "selection_metrics_uad": selection_metrics_uad,
         "metrics_uad": metrics_uad,
         "train_curves": train_log,
         "oneclass": {
-            "method": args.oneclass_method,
+            "method": search_oneclass_method,
+            "search_method": search_oneclass_method,
+            "weighting_method": weighting_cfg.method,
+            "final_method": final_cfg.method,
             "weighting_backend": weighting_backend.summary(),
             "final_backend": final_backend_info,
         },
         "weighting": {
             "option": "option2_oneclass_on_forward_features",
-            "method": args.oneclass_method,
+            "method": weighting_cfg.method,
             "score_name": weighting_backend.score_name,
             "tau": float(tau),
             "w_min": float(w_min),
+            "top_keep_ratio": float(top_keep_ratio),
+            "keep_stats": keep_stats,
             "config": weighting_cfg.to_dict(),
+            "raw_score_stats": weighting_result["raw_score_stats"],
+            "source_fit_count": weighting_result["source_fit_count"],
         }
     }
 
@@ -868,7 +1899,6 @@ def oneclass_objective_on_source_normal(
     """
     _set_requires_grad(cand, False)
     cand.eval()
-
     X_fit = subsample_array(X_train_norm, oneclass_cfg.max_fit, seed=seed)
     F_fit = extract_candidate_features(cand, X_fit, device=device, batch_size=256)
     backend = fit_oneclass_on_features(F_fit, device=device, oneclass_cfg=oneclass_cfg, seed=seed)
@@ -904,7 +1934,6 @@ def fit_final_oneclass_and_score(
     """
     cand.eval()
     _set_requires_grad(cand, False)
-
     X_fit = subsample_array(X_train_norm, oneclass_cfg.max_fit, seed=seed)
     F_fit = extract_candidate_features(cand, X_fit, device=device, batch_size=256)
     backend = fit_oneclass_on_features(F_fit, device=device, oneclass_cfg=oneclass_cfg, seed=seed)
@@ -912,6 +1941,28 @@ def fit_final_oneclass_and_score(
     scores_train = score_candidate_oneclass_stream(cand, backend, X_train_norm, device=device, batch_size=256)
     scores_eval = score_candidate_oneclass_stream(cand, backend, X_eval, device=device, batch_size=256)
     return scores_eval, scores_train, backend.summary()
+
+
+def fit_final_oneclass_backend(
+    cand,
+    X_train_norm,
+    device,
+    oneclass_cfg: OneClassConfig,
+    seed=42,
+):
+    """Fit final one-class backend on source-normal features only."""
+    cand.eval()
+    _set_requires_grad(cand, False)
+    X_fit_source = subsample_array(X_train_norm, oneclass_cfg.max_fit, seed=seed)
+    F_fit = extract_candidate_features(cand, X_fit_source, device=device, batch_size=256)
+    backend = fit_oneclass_on_features(F_fit, device=device, oneclass_cfg=oneclass_cfg, seed=seed)
+    scores_train = score_candidate_oneclass_stream(cand, backend, X_train_norm, device=device, batch_size=256)
+    summary = backend.summary()
+    summary["fit_source_count"] = int(len(X_fit_source))
+    summary["fit_total_count"] = int(len(F_fit))
+    summary["fit_target_count"] = 0
+    summary["threshold_reference"] = "source_only"
+    return backend, scores_train, summary
 
 
 _OMNI_PAPER_LOW_QUANTILES = {
@@ -984,6 +2035,7 @@ def _generic_uad_metrics_from_scores(y_eval, scores_eval, scores_train, *, pot_q
     ev = event_f1_and_delay(y_eval, y_pred_bin)
     return {
         "ap": float(ap),
+        "auprc": float(ap),
         "auroc": float(auroc),
         "f1_pot": float(f1_pot),
         "precision_pot": float(p_pot),
@@ -1035,6 +2087,7 @@ def _omni_metrics_from_scores(y_eval, scores_eval, scores_train, *, pot_q=1e-3, 
     ev = event_f1_and_delay(y_eval, y_pred_bin)
     return {
         "ap": float(ap),
+        "auprc": float(ap),
         "auroc": float(auroc),
         "f1_pot": float(f1_pot),
         "precision_pot": float(p_pot),
@@ -1927,7 +2980,7 @@ def main():
     parser.add_argument("--dataset_or_paths", default=None,
                         help=(
                             "uad_source: train_normal.npz,val_mixed.npz[,test_mixed.npz] | "
-                            "adaptnas_combined: train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz[,test_mixed.npz]"
+                            "adaptnas_combined: train_normal.npz,target_pool_unlabeled.npz,val_mixed.npz,test_mixed.npz"
                         ))
     parser.add_argument("--raw_smd_root", default="data/ServerMachineDataset",
                         help="Raw SMD root with train/test/(test_label|labels). Falls back to external SMD mirrors when needed.")
@@ -1939,11 +2992,87 @@ def main():
                         help="Raw SWaT attack CSV. Used by family=usad.")
     parser.add_argument("--epochs_pretrain", type=int, default=10)
     parser.add_argument("--search_candidates", type=int, default=5)
+    parser.add_argument(
+        "--nas_compact_space",
+        action="store_true",
+        help="Sample NAS candidates from a compact search space that removes weaker or less stable options.",
+    )
+    parser.add_argument(
+        "--nas_search_strategy",
+        type=str,
+        default="random",
+        choices=["random", "family_wise_constrained", "adaptive_family_wise", "evolutionary_guided"],
+        help=(
+            "random: sample candidate skeletons from the full mixed search space.\n"
+            "family_wise_constrained: split the candidate budget across seq_type families "
+            "(gru/tcn/transformer) and sample only micro-architectures within each family.\n"
+            "adaptive_family_wise: probe every family once per iteration, then spend the "
+            "remaining budget on the currently strongest families.\n"
+            "evolutionary_guided: seed from fixed anchor architectures, then mutate parents "
+            "selected from the current best population while keeping a small random exploration budget."
+        ),
+    )
+    parser.add_argument(
+        "--nas_search_families",
+        type=str,
+        default="gru,tcn,transformer",
+        help=(
+            "Comma-separated seq_type families used by family-wise or evolutionary-guided NAS."
+        ),
+    )
+    parser.add_argument(
+        "--nas_evo_parent_pool",
+        type=int,
+        default=3,
+        help="How many top population members to keep as parents for evolutionary-guided NAS.",
+    )
+    parser.add_argument(
+        "--nas_evo_anchor_ratio",
+        type=float,
+        default=0.2,
+        help="Fraction of each evolutionary-guided iteration reserved for exact fixed-anchor seeds.",
+    )
+    parser.add_argument(
+        "--nas_evo_mutation_steps",
+        type=int,
+        default=3,
+        help="Number of discrete micro-mutations applied when spawning an evolutionary child.",
+    )
+    parser.add_argument(
+        "--nas_evo_cross_family_ratio",
+        type=float,
+        default=0.5,
+        help="Fraction of mutation budget encouraged to jump across seq_type families for diversity.",
+    )
+    parser.add_argument(
+        "--nas_evo_random_ratio",
+        type=float,
+        default=0.2,
+        help="Fraction of each evolutionary-guided NAS iteration reserved for random exploration.",
+    )
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--combined_upper_gap", type=float, default=1.0,
                         help="Weight for source-target feature-gap term in unlabeled upper-level objective.")
+    parser.add_argument(
+        "--combined_weight_tau",
+        type=float,
+        default=1.0,
+        help="Temperature for reliability weighting on target-pool one-class scores.",
+    )
+    parser.add_argument(
+        "--combined_weight_w_min",
+        type=float,
+        default=0.05,
+        help="Minimum reliability weight before optional top-k filtering.",
+    )
+    parser.add_argument(
+        "--combined_weight_top_keep_ratio",
+        type=float,
+        default=1.0,
+        help="Keep only the top normal-like fraction of target-pool samples by reliability weight. 1.0 keeps all.",
+    )
     parser.add_argument(
         "--mode",
         type=str,
@@ -1973,12 +3102,56 @@ def main():
         choices=list_oneclass_methods(),
         help="One-class backend for default_nasade feature scoring/weighting.",
     )
+    parser.add_argument(
+        "--weighting_oneclass_method",
+        type=str,
+        default=None,
+        choices=list_oneclass_methods(),
+        help="Optional backend used only for target-pool reliability weighting in adaptnas_combined. Defaults to --oneclass_method.",
+    )
+    parser.add_argument(
+        "--final_oneclass_method",
+        type=str,
+        default=None,
+        choices=list_oneclass_methods(),
+        help="Optional backend used for final val/test scoring. Defaults to --oneclass_method.",
+    )
     parser.add_argument("--oneclass_epochs", type=int, default=10)
     parser.add_argument("--oneclass_final_epochs", type=int, default=20)
     parser.add_argument("--oneclass_lr", type=float, default=1e-3)
     parser.add_argument("--oneclass_batch_size", type=int, default=1024)
     parser.add_argument("--oneclass_max_fit", type=int, default=5000)
     parser.add_argument("--knn_k", type=int, default=5)
+    parser.add_argument("--iforest_n_estimators", type=int, default=100)
+    parser.add_argument("--iforest_max_samples", type=str, default="auto")
+    parser.add_argument("--iforest_contamination", type=str, default="auto")
+    parser.add_argument("--iforest_max_features", type=float, default=1.0)
+    parser.add_argument("--lof_hidden_dim", type=int, default=128)
+    parser.add_argument("--lof_rep_dim", type=int, default=64)
+    parser.add_argument("--lof_n_neighbors", type=int, default=20)
+    parser.add_argument("--lof_metric", type=str, default="minkowski")
+    parser.add_argument("--lof_p", type=int, default=2)
+    parser.add_argument("--flow_hidden_dim", type=int, default=128)
+    parser.add_argument("--flow_rep_dim", type=int, default=64)
+    parser.add_argument("--flow_layers", type=int, default=4)
+    parser.add_argument("--flow_warmup_epochs", type=int, default=2)
+    parser.add_argument("--flow_scale_clip", type=float, default=2.0)
+    parser.add_argument("--dagmm_hidden_dim", type=int, default=128)
+    parser.add_argument("--dagmm_latent_dim", type=int, default=16)
+    parser.add_argument("--dagmm_est_hidden_dim", type=int, default=64)
+    parser.add_argument("--dagmm_components", type=int, default=3)
+    parser.add_argument("--dagmm_lambda_energy", type=float, default=0.1)
+    parser.add_argument("--dagmm_lambda_cov_diag", type=float, default=5e-3)
+    parser.add_argument("--dagmm_warmup_epochs", type=int, default=2)
+    parser.add_argument("--drocc_hidden_dim", type=int, default=128)
+    parser.add_argument("--drocc_rep_dim", type=int, default=64)
+    parser.add_argument("--drocc_radius", type=float, default=1.0)
+    parser.add_argument("--drocc_gamma", type=float, default=2.0)
+    parser.add_argument("--drocc_adv_steps", type=int, default=5)
+    parser.add_argument("--drocc_adv_step_size", type=float, default=0.1)
+    parser.add_argument("--drocc_warmup_epochs", type=int, default=2)
+    parser.add_argument("--drocc_adv_weight", type=float, default=1.0)
+    parser.add_argument("--drocc_compactness_weight", type=float, default=0.1)
     parser.add_argument("--ocsvm_nu", type=float, default=0.05)
     parser.add_argument("--ocsvm_kernel", type=str, default="rbf", choices=["linear", "rbf", "poly", "sigmoid"])
     parser.add_argument("--ocsvm_gamma", type=str, default="scale")
@@ -2011,6 +3184,55 @@ def main():
     parser.add_argument("--combined_final_candidate_warmup_steps", type=int, default=80)
     parser.add_argument("--combined_final_steps", type=int, default=200)
     parser.add_argument("--combined_final_patience", type=int, default=10)
+    parser.add_argument(
+        "--combined_nas_topk_rerank",
+        type=int,
+        default=5,
+        help=(
+            "Number of unique NAS candidates ranked by upper_obj to rerank with final-only "
+            "selection on val_mixed. 1 reproduces the old NAS_BestArch-only protocol."
+        ),
+    )
+    parser.add_argument(
+        "--combined_nas_proxy_rerank_topk",
+        type=int,
+        default=0,
+        help=(
+            "Number of additional unique NAS candidates ranked by score_proxy_obj to rerank "
+            "with final-only selection on val_mixed. 0 disables proxy reranking."
+        ),
+    )
+    parser.add_argument(
+        "--combined_nas_fusion_rerank_topk",
+        type=int,
+        default=0,
+        help=(
+            "Number of additional unique NAS candidates ranked by a fusion of upper_obj rank "
+            "and score_proxy_obj rank to rerank with final-only selection on val_mixed. "
+            "0 disables fusion reranking."
+        ),
+    )
+    parser.add_argument(
+        "--combined_nas_fusion_upper_weight",
+        type=float,
+        default=1.0,
+        help="Weight of upper_obj rank in NAS fusion reranking.",
+    )
+    parser.add_argument(
+        "--combined_nas_fusion_proxy_weight",
+        type=float,
+        default=1.0,
+        help="Weight of score_proxy_obj rank in NAS fusion reranking.",
+    )
+    parser.add_argument(
+        "--combined_nas_diverse_per_family",
+        type=int,
+        default=0,
+        help=(
+            "Add up to this many extra NAS finalists per sequence family, ranked by upper_obj, "
+            "after the standard top-K/proxy rerank pool. 0 disables family-diverse finalists."
+        ),
+    )
     parser.add_argument("--omni_epochs", type=int, default=20)
     parser.add_argument("--omni_final_epochs", type=int, default=20)
     parser.add_argument("--omni_lr", type=float, default=1e-3)
@@ -2179,21 +3401,24 @@ def main():
         X_test, y_test = load_Xy(parts[3])
         combined_has_separate_pool = True
 
-    if y_val is None:
+    if args.mode == "uad_source" and y_val is None:
+        raise ValueError("val_mixed.npz must contain y for evaluation.")
+    if args.mode == "adaptnas_combined" and y_val is None:
         raise ValueError("val_mixed.npz must contain y for evaluation.")
 
-    val_has_both_classes = np.unique(y_val).size >= 2
+    val_has_both_classes = (y_val is not None) and (np.unique(y_val).size >= 2)
     test_has_both_classes = (y_test is not None) and (np.unique(y_test).size >= 2)
 
     print("[UAD INPUT]")
     print("  train_normal:", X_train_norm.shape, "y:", ("yes" if y_train_norm is not None else "no"))
     if X_target_pool is not None:
         print("  target_pool :", X_target_pool.shape, "y: no/ignored")
-    print("  val_mixed   :", X_val.shape, "y:", ("yes" if y_val is not None else "no"))
+    if X_val is not None:
+        print("  val_mixed   :", X_val.shape, "y:", ("yes" if y_val is not None else "no"))
     if X_test is not None:
         print("  test_mixed  :", X_test.shape, "y:", ("yes" if y_test is not None else "no"))
 
-    if args.mode == "adaptnas_combined" and not val_has_both_classes:
+    if args.mode == "adaptnas_combined" and (not val_has_both_classes):
         print(
             "[WARN] val_mixed contains only one class. Search no longer uses target labels, "
             "but validation metrics on val_mixed may be less informative."
@@ -2203,7 +3428,8 @@ def main():
     X_train_norm = fix_length(X_train_norm, window=128)
     if X_target_pool is not None:
         X_target_pool = fix_length(X_target_pool, window=128)
-    X_val = fix_length(X_val, window=128)
+    if X_val is not None:
+        X_val = fix_length(X_val, window=128)
     if X_test is not None:
         X_test = fix_length(X_test, window=128)
 
@@ -2216,10 +3442,19 @@ def main():
     # create "source labels" for combined mode: all zeros (normal)
     Ys_source = np.zeros(len(X_train_norm), dtype=int)
 
-    # choose evaluation split for combined final report
-    X_eval = X_test if (X_test is not None and y_test is not None) else X_val
-    y_eval = y_test if (X_test is not None and y_test is not None) else y_val
-    eval_name = "test_mixed" if (X_test is not None and y_test is not None) else "val_mixed"
+    X_select = X_val
+    y_select = y_val
+    selection_name = "val_mixed"
+    X_report = X_test if (X_test is not None and y_test is not None) else X_val
+    y_report = y_test if (X_test is not None and y_test is not None) else y_val
+    report_name = "test_mixed" if (X_test is not None and y_test is not None) else "val_mixed"
+    if y_report is None:
+        raise ValueError(
+            "No labeled report split is available. Provide test_mixed with y, or val_mixed for the validation-based protocol."
+        )
+    X_eval = X_report
+    y_eval = y_report
+    eval_name = report_name
 
     # -------- Stage 1: TS-TCC pretraining --------
     from src.ts_tcc.models.model import base_Model
@@ -2237,7 +3472,22 @@ def main():
     candidate_root = infer_cached_pretrain_root(norm_path)
     if candidate_root and os.path.isdir(candidate_root):
         try:
-            X_pretrain_multi = load_all_cached_entities_for_pretrain(candidate_root, window=128)
+            cached_name = os.path.basename(candidate_root).lower()
+            pretrain_entity_prefix = None
+            pretrain_entity_cap = 0
+            if cached_name in {"exathlon", "hai"}:
+                experiment_dir = os.path.basename(os.path.dirname(parts[0]))
+                source_entity = experiment_dir.split("__to__")[0] if "__to__" in experiment_dir else experiment_dir
+                pretrain_entity_prefix = source_entity.split("-")[0] if "-" in source_entity else source_entity
+                pretrain_entity_cap = 16 if cached_name == "exathlon" else 256
+            X_pretrain_multi = load_all_cached_entities_for_pretrain(
+                candidate_root,
+                window=128,
+                in_channels=in_ch,
+                entity_prefix=pretrain_entity_prefix,
+                max_windows_per_entity=pretrain_entity_cap,
+                seed=args.seed,
+            )
             pretrain_multi_name = os.path.basename(candidate_root)
         except RuntimeError:
             X_pretrain_multi = None
@@ -2310,17 +3560,38 @@ def main():
     N_ITERS = max(1, int(args.nas_search_iters))
     history = []
     best_arch = None
+    search_oneclass_method = resolve_search_oneclass_method(args)
+    weighting_oneclass_method = resolve_weighting_oneclass_method(args)
+    final_oneclass_method = resolve_final_oneclass_method(args)
     search_oneclass_cfg = build_oneclass_config(
         args,
+        method=search_oneclass_method,
+        epochs=args.oneclass_epochs,
+        warmup_epochs=args.svdd_warmup_epochs,
+    )
+    weighting_oneclass_cfg = build_oneclass_config(
+        args,
+        method=weighting_oneclass_method,
         epochs=args.oneclass_epochs,
         warmup_epochs=args.svdd_warmup_epochs,
     )
     final_oneclass_cfg = build_oneclass_config(
         args,
+        method=final_oneclass_method,
         epochs=args.oneclass_final_epochs,
         warmup_epochs=args.svdd_final_warmup_epochs,
     )
-    oneclass_score_name = get_oneclass_score_name(args.oneclass_method)
+    search_oneclass_score_name = get_oneclass_score_name(search_oneclass_cfg.method)
+    weighting_oneclass_score_name = get_oneclass_score_name(weighting_oneclass_cfg.method)
+    final_oneclass_score_name = get_oneclass_score_name(final_oneclass_cfg.method)
+    nas_sampling_plan = build_nas_sampling_plan(args)
+    print(
+        "[INFO] NAS sampling plan: "
+        f"strategy={nas_sampling_plan['strategy']} | "
+        f"families={nas_sampling_plan['families']} | "
+        f"candidate_plan={nas_sampling_plan['plan']} | "
+        f"effective_candidates={nas_sampling_plan['effective_candidates']}"
+    )
 
     if args.mode == "uad_source":
         # split train_normal into train/val-normal for one-class objective selection
@@ -2335,15 +3606,31 @@ def main():
 
         best_obj = float("inf")
         best_state = None
+        family_history_scores = {}
+        evolutionary_population = []
 
         for iter_id in range(N_ITERS):
             print(
                 f"\n[ITER {iter_id+1}/{N_ITERS}] UAD_SOURCE search: "
-                f"{args.oneclass_method} objective on train_normal..."
+                f"{search_oneclass_cfg.method} objective on train_normal..."
             )
 
-            for i in range(args.search_candidates):
-                arch_c = sample_arch()
+            candidate_counter = 0
+            total_candidates = nas_sampling_plan["effective_candidates"]
+            family_seen_counts = defaultdict(int)
+            family_best_scores_iter = {}
+
+            def evaluate_uad_candidate(family_name, sampling_stage, *, arch_override=None, evo_meta=None):
+                nonlocal candidate_counter, best_obj, best_arch, best_state
+
+                family_seen_counts[family_name or "mixed"] += 1
+                candidate_counter += 1
+
+                arch_c = (
+                    clone_arch(arch_override)
+                    if arch_override is not None
+                    else sample_arch(seq_type=family_name, compact=bool(getattr(args, "nas_compact_space", False)))
+                )
                 cand = CandidateModel(in_ch, arch_c, num_classes=2).to(device)
                 initialize_candidate_from_tstcc(cand, tstcc_backbone)
 
@@ -2356,28 +3643,106 @@ def main():
                     seed=args.seed,
                 )
 
+                fam_key = arch_c.seq_type
+                prev_best = family_best_scores_iter.get(fam_key)
+                family_best_scores_iter[fam_key] = float(obj) if prev_best is None else min(float(obj), float(prev_best))
+
                 entry = {
                     "iter": iter_id + 1,
                     "arch": str(arch_c),
-                    "oneclass_method": args.oneclass_method,
+                    "nas_search_strategy": nas_sampling_plan["strategy"],
+                    "search_family": fam_key,
+                    "family_candidate_index": family_seen_counts[family_name or "mixed"],
+                    "global_candidate_index": candidate_counter,
+                    "sampling_stage": sampling_stage,
+                    "oneclass_method": search_oneclass_cfg.method,
                     "oneclass_score_name": info["score_name"],
                     "oneclass_obj": float(obj),
                     "oneclass_mean_score": float(info["mean_score"]),
+                    "evo_parent_arch": None if evo_meta is None else evo_meta.get("parent_arch"),
+                    "evo_parent_score": None if evo_meta is None else evo_meta.get("parent_score"),
+                    "evo_parent_family": None if evo_meta is None else evo_meta.get("parent_family"),
+                    "evo_seed_name": None if evo_meta is None else evo_meta.get("seed_name"),
                 }
-                if args.oneclass_method == "deepsvdd":
+                if search_oneclass_cfg.method == "deepsvdd":
                     entry["svdd_obj"] = float(obj)
                     entry["svdd_mean_dist2"] = float(info["mean_score"])
                 history.append(entry)
+                evolutionary_population.append(
+                    {
+                        "arch_cfg": clone_arch(arch_c),
+                        "score": float(obj),
+                        "family": fam_key,
+                        "iter": iter_id + 1,
+                        "sampling_stage": sampling_stage,
+                    }
+                )
 
                 print(
-                    f"  Candidate {i+1}/{args.search_candidates}: "
-                    f"obj(mean_{info['score_name']})={obj:.6f}"
+                    f"  Candidate {candidate_counter}/{total_candidates} "
+                    f"[family={fam_key}, stage={sampling_stage}]: obj(mean_{info['score_name']})={obj:.6f}"
                 )
 
                 if obj < best_obj:
                     best_obj = float(obj)
                     best_arch = arch_c
                     best_state = {k: v.detach().cpu().clone() for k, v in cand.state_dict().items()}
+
+            if nas_sampling_plan["strategy"] == "adaptive_family_wise":
+                for family_name in nas_sampling_plan["families"]:
+                    evaluate_uad_candidate(family_name, "initial_family_probe")
+
+                remaining_budget = total_candidates - len(nas_sampling_plan["families"])
+                ranked_families, extra_order = _build_adaptive_extra_family_order(
+                    nas_sampling_plan["families"],
+                    remaining_budget,
+                    family_best_scores_iter,
+                    family_history_scores,
+                )
+                if extra_order:
+                    print(f"  [ADAPTIVE] family ranking after probes: {ranked_families} | extras={extra_order}")
+                    for family_name in extra_order:
+                        evaluate_uad_candidate(family_name, "adaptive_family_extra")
+
+                family_history_scores = _update_family_history_scores(family_history_scores, family_best_scores_iter)
+            elif nas_sampling_plan["strategy"] == "evolutionary_guided":
+                evo_specs = build_evolutionary_candidate_specs(
+                    iter_id=iter_id,
+                    total_candidates=total_candidates,
+                    in_ch=in_ch,
+                    args=args,
+                    families=nas_sampling_plan["families"],
+                    population_records=evolutionary_population,
+                )
+                if evo_specs:
+                    parent_labels = sorted(
+                        {
+                            spec["parent_arch"]
+                            for spec in evo_specs
+                            if spec.get("parent_arch")
+                        }
+                    )
+                    print(
+                        f"  [EVOLVE] specs={len(evo_specs)} "
+                        f"| parent_pool={args.nas_evo_parent_pool} "
+                        f"| mutation_steps={args.nas_evo_mutation_steps} "
+                        f"| random_ratio={args.nas_evo_random_ratio} "
+                        f"| parents={parent_labels[:3]}"
+                    )
+                for spec in evo_specs:
+                    evaluate_uad_candidate(
+                        spec["family_name"],
+                        spec["sampling_stage"],
+                        arch_override=spec["arch_cfg"],
+                        evo_meta=spec,
+                    )
+            else:
+                for family_name, family_budget in nas_sampling_plan["plan"]:
+                    family_label = family_name or "mixed"
+                    print(f"  [FAMILY {family_label}] evaluating {family_budget} candidates")
+
+                    for _ in range(family_budget):
+                        evaluate_uad_candidate(family_name, "fixed_family_budget")
 
         print(f"\n[UAD_SOURCE SEARCH DONE] ✅ Best arch = {best_arch} | best_obj={best_obj:.6f}")
 
@@ -2398,14 +3763,18 @@ def main():
         best_overall_arch = None
         best_overall_iter = None
         best_overall_cand_state = None
+        family_history_scores = {}
+        unique_nas_candidates = {}
+        evolutionary_population = []
 
-        tau = 1.0
-        w_min = 0.05
+        tau = float(args.combined_weight_tau)
+        w_min = float(args.combined_weight_w_min)
+        top_keep_ratio = float(args.combined_weight_top_keep_ratio)
 
         for iter_id in range(N_ITERS):
             print(
                 f"\n[ITER {iter_id+1}/{N_ITERS}] ADAPTNAS_COMBINED: "
-                f"{args.oneclass_method}-weighting + bilevel search..."
+                f"{weighting_oneclass_cfg.method}-weighting + bilevel search..."
             )
 
             ds_source = ArrayDataset(Xs, Ys)
@@ -2413,8 +3782,22 @@ def main():
             best_arch_iter = None
             best_cand_iter = None
 
-            for i in range(args.search_candidates):
-                arch_c = sample_arch()
+            candidate_counter = 0
+            total_candidates = nas_sampling_plan["effective_candidates"]
+            family_seen_counts = defaultdict(int)
+            family_best_scores_iter = {}
+
+            def evaluate_combined_candidate(family_name, sampling_stage, *, arch_override=None, evo_meta=None):
+                nonlocal candidate_counter, best_iter_upper_obj, best_arch_iter, best_cand_iter
+
+                family_seen_counts[family_name or "mixed"] += 1
+                candidate_counter += 1
+
+                arch_c = (
+                    clone_arch(arch_override)
+                    if arch_override is not None
+                    else sample_arch(seq_type=family_name, compact=bool(getattr(args, "nas_compact_space", False)))
+                )
                 cand = CandidateModel(in_ch, arch_c, num_classes=2).to(device)
                 initialize_candidate_from_tstcc(cand, tstcc_backbone)
 
@@ -2432,12 +3815,12 @@ def main():
 
                 # Fit one-class backend on candidate features from source normal.
                 _set_requires_grad(cand, False)
-                Xs_fit = subsample_array(Xs, search_oneclass_cfg.max_fit, seed=args.seed)
+                Xs_fit = subsample_array(Xs, weighting_oneclass_cfg.max_fit, seed=args.seed)
                 Fs = extract_candidate_features(cand, Xs_fit, device=device, batch_size=256)
                 oneclass_backend = fit_oneclass_on_features(
                     Fs,
                     device=device,
-                    oneclass_cfg=search_oneclass_cfg,
+                    oneclass_cfg=weighting_oneclass_cfg,
                     seed=args.seed,
                 )
 
@@ -2449,10 +3832,13 @@ def main():
                     batch_size=256,
                 )
                 w_ent = robust_sigmoid_weights(raw, tau=tau, w_min=w_min)
+                w_ent, keep_stats = apply_top_keep_ratio(w_ent, top_keep_ratio=top_keep_ratio)
 
                 print(
                     f"    [W] w_ent stats: mean={w_ent.mean():.4f} "
                     f"min={w_ent.min():.4f} max={w_ent.max():.4f} "
+                    f"| tau={tau} w_min={w_min} top_keep_ratio={top_keep_ratio} "
+                    f"kept={keep_stats['keep_count']}/{len(w_ent)} "
                     f"| score={oneclass_backend.score_name}"
                 )
 
@@ -2494,11 +3880,31 @@ def main():
                     beta_gap=args.combined_upper_gap,
                 )
                 upper_obj = float(stats["upper_obj"])
+                proxy_stats = compute_score_proxy_objective(
+                    cand,
+                    X_source_fit=Xs,
+                    X_source_eval=Xs_holdout,
+                    X_target_pool=Xt_train,
+                    w_target=w_ent,
+                    device=device,
+                    oneclass_cfg=weighting_oneclass_cfg,
+                    seed=args.seed,
+                )
+                score_proxy_obj = float(proxy_stats["score_proxy_obj"])
+
+                fam_key = arch_c.seq_type
+                prev_best = family_best_scores_iter.get(fam_key)
+                family_best_scores_iter[fam_key] = upper_obj if prev_best is None else min(float(prev_best), upper_obj)
 
                 entry = {
                     "iter": iter_id + 1,
                     "arch": str(arch_c),
-                    "oneclass_method": args.oneclass_method,
+                    "nas_search_strategy": nas_sampling_plan["strategy"],
+                    "search_family": fam_key,
+                    "family_candidate_index": family_seen_counts[family_name or "mixed"],
+                    "global_candidate_index": candidate_counter,
+                    "sampling_stage": sampling_stage,
+                    "oneclass_method": weighting_oneclass_cfg.method,
                     "oneclass_score_name": oneclass_backend.score_name,
                     "upper_obj": float(upper_obj),
                     "src_obj": float(stats["src_obj"]),
@@ -2507,13 +3913,49 @@ def main():
                     "alpha": float(alpha_iter),
                     "tau": float(tau),
                     "w_min": float(w_min),
+                    "top_keep_ratio": float(top_keep_ratio),
+                    "keep_count": int(keep_stats["keep_count"]),
+                    "active_fraction": float(keep_stats["active_fraction"]),
+                    "score_proxy_obj": score_proxy_obj,
+                    "score_proxy_src_mean": float(proxy_stats["src_mean"]),
+                    "score_proxy_src_std": float(proxy_stats["src_std"]),
+                    "score_proxy_tgt_all_mean": float(proxy_stats["tgt_all_mean"]),
+                    "score_proxy_tgt_high_mean": float(proxy_stats["tgt_high_mean"]),
+                    "score_proxy_tgt_low_mean": float(proxy_stats["tgt_low_mean"]),
+                    "score_proxy_tgt_separation": float(proxy_stats["tgt_separation"]),
+                    "score_proxy_target_high_count": int(proxy_stats["target_high_count"]),
+                    "score_proxy_target_low_count": int(proxy_stats["target_low_count"]),
+                    "evo_parent_arch": None if evo_meta is None else evo_meta.get("parent_arch"),
+                    "evo_parent_score": None if evo_meta is None else evo_meta.get("parent_score"),
+                    "evo_parent_family": None if evo_meta is None else evo_meta.get("parent_family"),
+                    "evo_seed_name": None if evo_meta is None else evo_meta.get("seed_name"),
                 }
-                if args.oneclass_method == "deepsvdd":
+                if weighting_oneclass_cfg.method == "deepsvdd":
                     entry["svdd_nu"] = float(args.svdd_nu)
                 history.append(entry)
+                evolutionary_population.append(
+                    {
+                        "arch_cfg": clone_arch(arch_c),
+                        "score": float(upper_obj),
+                        "family": fam_key,
+                        "iter": iter_id + 1,
+                        "sampling_stage": sampling_stage,
+                    }
+                )
+                update_unique_nas_candidate_pool(
+                    unique_nas_candidates,
+                    arch_c,
+                    upper_obj,
+                    score_proxy_obj=score_proxy_obj,
+                    score_proxy_stats=proxy_stats,
+                    iter_id=iter_id + 1,
+                    search_family=fam_key,
+                    sampling_stage=sampling_stage,
+                )
 
                 print(
-                    f"  Candidate {i+1}/{args.search_candidates}: upper_obj={upper_obj:.6f} "
+                    f"  Candidate {candidate_counter}/{total_candidates} [family={fam_key}, stage={sampling_stage}]: "
+                    f"upper_obj={upper_obj:.6f} score_proxy_obj={score_proxy_obj:.6f} "
                     f"(src={stats['src_obj']:.6f}, tgt={stats['tgt_obj']:.6f}, gap={stats['gap_obj']:.6f})"
                 )
 
@@ -2521,6 +3963,62 @@ def main():
                     best_iter_upper_obj = float(upper_obj)
                     best_arch_iter = arch_c
                     best_cand_iter = cand
+
+            if nas_sampling_plan["strategy"] == "adaptive_family_wise":
+                for family_name in nas_sampling_plan["families"]:
+                    evaluate_combined_candidate(family_name, "initial_family_probe")
+
+                remaining_budget = total_candidates - len(nas_sampling_plan["families"])
+                ranked_families, extra_order = _build_adaptive_extra_family_order(
+                    nas_sampling_plan["families"],
+                    remaining_budget,
+                    family_best_scores_iter,
+                    family_history_scores,
+                )
+                if extra_order:
+                    print(f"  [ADAPTIVE] family ranking after probes: {ranked_families} | extras={extra_order}")
+                    for family_name in extra_order:
+                        evaluate_combined_candidate(family_name, "adaptive_family_extra")
+
+                family_history_scores = _update_family_history_scores(family_history_scores, family_best_scores_iter)
+            elif nas_sampling_plan["strategy"] == "evolutionary_guided":
+                evo_specs = build_evolutionary_candidate_specs(
+                    iter_id=iter_id,
+                    total_candidates=total_candidates,
+                    in_ch=in_ch,
+                    args=args,
+                    families=nas_sampling_plan["families"],
+                    population_records=evolutionary_population,
+                )
+                if evo_specs:
+                    parent_labels = sorted(
+                        {
+                            spec["parent_arch"]
+                            for spec in evo_specs
+                            if spec.get("parent_arch")
+                        }
+                    )
+                    print(
+                        f"  [EVOLVE] specs={len(evo_specs)} "
+                        f"| parent_pool={args.nas_evo_parent_pool} "
+                        f"| mutation_steps={args.nas_evo_mutation_steps} "
+                        f"| random_ratio={args.nas_evo_random_ratio} "
+                        f"| parents={parent_labels[:3]}"
+                    )
+                for spec in evo_specs:
+                    evaluate_combined_candidate(
+                        spec["family_name"],
+                        spec["sampling_stage"],
+                        arch_override=spec["arch_cfg"],
+                        evo_meta=spec,
+                    )
+            else:
+                for family_name, family_budget in nas_sampling_plan["plan"]:
+                    family_label = family_name or "mixed"
+                    print(f"  [FAMILY {family_label}] evaluating {family_budget} candidates")
+
+                    for _ in range(family_budget):
+                        evaluate_combined_candidate(family_name, "fixed_family_budget")
 
             print(f"[ITER {iter_id+1}] ✅ Best iter arch = {best_arch_iter} | upper_obj={best_iter_upper_obj:.6f}")
 
@@ -2536,8 +4034,27 @@ def main():
 
         best_cand = CandidateModel(in_ch, best_arch, num_classes=2).to(device)
         best_cand.load_state_dict(best_overall_cand_state)
+        nas_final_arches, nas_final_meta, nas_topk_records, nas_proxy_records, nas_family_records, nas_fusion_records = build_nas_final_candidates(
+            best_arch,
+            unique_nas_candidates,
+            args.combined_nas_topk_rerank,
+            args.combined_nas_proxy_rerank_topk,
+            args.combined_nas_diverse_per_family,
+            args.combined_nas_fusion_rerank_topk,
+            args.combined_nas_fusion_upper_weight,
+            args.combined_nas_fusion_proxy_weight,
+        )
 
         print(f"\n[SEARCH DONE] ✅ Best OVERALL arch = {best_arch} (iter {best_overall_iter}) | best_upper_obj={best_overall_upper_obj:.6f}")
+
+        print(
+            "[SEARCH DONE] NAS rerank pool: "
+            f"unique_candidates={len(unique_nas_candidates)} | "
+            f"topk_rerank={min(max(1, int(args.combined_nas_topk_rerank)), len(unique_nas_candidates))} | "
+            f"proxy_rerank_topk={min(max(0, int(args.combined_nas_proxy_rerank_topk)), len(unique_nas_candidates))} | "
+            f"fusion_rerank_topk={min(max(0, int(args.combined_nas_fusion_rerank_topk)), len(unique_nas_candidates))} | "
+            f"diverse_per_family={max(0, int(args.combined_nas_diverse_per_family))}"
+        )
 
     # -------- Final stage --------
     print("[INFO] Final stage ...")
@@ -2547,22 +4064,67 @@ def main():
         "family": args.family,
         "best_arch": str(best_arch),
         "search_history": history,
-        "eval_split": eval_name,
+        "nas_search": {
+            "strategy": nas_sampling_plan["strategy"],
+            "compact_space": bool(getattr(args, "nas_compact_space", False)),
+            "families": nas_sampling_plan["families"],
+            "requested_candidates": nas_sampling_plan["requested_candidates"],
+            "effective_candidates": nas_sampling_plan["effective_candidates"],
+            "plan": (
+                [
+                    {"family": family if family is not None else "mixed", "candidates": count}
+                    for family, count in nas_sampling_plan["plan"]
+                ]
+                if nas_sampling_plan["plan"] is not None
+                else None
+            ),
+            "min_candidates_per_family": nas_sampling_plan.get("min_candidates_per_family"),
+            "evolutionary_config": (
+                {
+                    "seed_population": nas_sampling_plan.get("seed_population"),
+                    "parent_pool": nas_sampling_plan.get("parent_pool"),
+                    "anchor_ratio": nas_sampling_plan.get("anchor_ratio"),
+                    "mutation_steps": nas_sampling_plan.get("mutation_steps"),
+                    "cross_family_ratio": nas_sampling_plan.get("cross_family_ratio"),
+                    "random_ratio": nas_sampling_plan.get("random_ratio"),
+                }
+                if nas_sampling_plan["strategy"] == "evolutionary_guided"
+                else None
+            ),
+        },
+        "selection_split": selection_name,
+        "report_split": report_name,
         "has_separate_target_pool": bool(combined_has_separate_pool),
         "val_mixed_has_both_classes": bool(val_has_both_classes),
         "oneclass": {
-            "method": args.oneclass_method,
-            "score_name": oneclass_score_name,
+            "method": search_oneclass_cfg.method,
+            "search_method": search_oneclass_cfg.method,
+            "weighting_method": weighting_oneclass_cfg.method,
+            "final_method": final_oneclass_cfg.method,
+            "score_name": (
+                search_oneclass_score_name
+                if args.mode == "uad_source"
+                else weighting_oneclass_score_name
+            ),
+            "search_score_name": search_oneclass_score_name,
+            "weighting_score_name": weighting_oneclass_score_name,
+            "final_score_name": final_oneclass_score_name,
             "search_config": search_oneclass_cfg.to_dict(),
+            "weighting_config": weighting_oneclass_cfg.to_dict(),
             "final_config": final_oneclass_cfg.to_dict(),
+            "combined_weighting": {
+                "tau": float(args.combined_weight_tau),
+                "w_min": float(args.combined_weight_w_min),
+                "top_keep_ratio": float(args.combined_weight_top_keep_ratio),
+            },
         },
         "search_objective": (
-            f"source_normal_oneclass_compactness(mean_{oneclass_score_name}; method={args.oneclass_method})"
+            f"source_normal_oneclass_compactness(mean_{search_oneclass_score_name}; method={search_oneclass_cfg.method})"
             if args.mode == "uad_source"
             else (
                 "unlabeled_bilevel_upper_obj("
                 "source_holdout_compactness + weighted_target_entropy + weighted_feature_gap; "
-                f"target weights from {args.oneclass_method}:{oneclass_score_name})"
+                f"target weights from {weighting_oneclass_cfg.method}:{weighting_oneclass_score_name})"
             )
         ),
     }
@@ -2591,6 +4153,7 @@ def main():
 
         res["metrics_uad"] = {
             "ap": float(ap),
+            "auprc": float(ap),
             "auroc": float(auroc),
             "f1_pot": float(f1_pot),
             "precision_pot": float(p_pot),
@@ -2608,7 +4171,7 @@ def main():
         }
 
     else:
-        # combined final-only baselines (Base_* + NAS_BestArch)
+        # combined final-only baselines (Base_* + NAS_BestArch + NAS top-K rerank)
         Xs, Xs_holdout = split_source_holdout_normal(X_train_norm, holdout_ratio=0.2, seed=args.seed)
         Ys = Ys_source
         Xt_train = X_target_pool
@@ -2618,14 +4181,21 @@ def main():
 
         base_arches = get_base_arches(in_ch=in_ch)
         arch_list = [(name, cfg) for name, cfg in base_arches]
-        arch_list.append(("NAS_BestArch", best_arch))
+        arch_list.extend(locals().get("nas_final_arches") or [("NAS_BestArch", best_arch)])
+        nas_final_meta = locals().get("nas_final_meta") or {}
+        nas_topk_records = locals().get("nas_topk_records") or []
+        nas_proxy_records = locals().get("nas_proxy_records") or []
+        nas_family_records = locals().get("nas_family_records") or []
+        nas_fusion_records = locals().get("nas_fusion_records") or []
 
         results_baselines = []
-        best_by_auroc = None
-        best_by_auroc_val = -1.0
+        best_by_val_auroc = None
+        best_by_val_auroc_val = -1.0
+        best_nas_by_val_auroc = None
+        best_nas_by_val_auroc_val = -1.0
 
         for arch_name, arch_cfg in arch_list:
-            print(f"\n[FINAL-ONLY] Running: {arch_name} (eval on {eval_name})")
+            print(f"\n[FINAL-ONLY] Running: {arch_name} (select on {selection_name}, report on {report_name})")
 
             out = run_final_only_option2(
                 arch_name=arch_name,
@@ -2633,7 +4203,8 @@ def main():
                 Xs=Xs, Ys=Ys,
                 X_target_pool=Xt_train,
                 X_source_holdout=Xs_holdout,
-                X_eval=X_eval, Y_eval=y_eval,
+                X_select=X_select, Y_select=y_select,
+                X_report=X_report, Y_report=y_report,
                 args=args,
                 device=device,
                 in_ch=in_ch,
@@ -2641,29 +4212,99 @@ def main():
                 tstcc_backbone=tstcc_backbone,
                 seed=args.seed,
                 out_dir="outputs",
+                selection_name=selection_name,
+                report_name=report_name,
             )
+
+            if arch_name in nas_final_meta:
+                out["nas_candidate"] = dict(nas_final_meta[arch_name])
 
             results_baselines.append(out)
 
-            auroc_val = -1.0
-            if out.get("metrics_uad") is not None:
-                auroc_val = float(out["metrics_uad"].get("auroc", -1.0))
+            auroc_val = get_selection_auroc(out)
+            auroc_val_cmp = -1.0 if auroc_val is None else float(auroc_val)
 
-            if auroc_val > best_by_auroc_val:
-                best_by_auroc_val = auroc_val
-                best_by_auroc = out
+            if auroc_val_cmp > best_by_val_auroc_val:
+                best_by_val_auroc_val = auroc_val_cmp
+                best_by_val_auroc = out
+            if arch_name.startswith("NAS_") and auroc_val_cmp > best_nas_by_val_auroc_val:
+                best_nas_by_val_auroc_val = auroc_val_cmp
+                best_nas_by_val_auroc = out
 
             with open(os.path.join("outputs", "baselines", f"{arch_name}.json"), "w", encoding="utf-8") as f:
                 json.dump(out, f, indent=2, ensure_ascii=False)
 
-        summary = {"best_by_auroc": best_by_auroc, "all": results_baselines}
+        nas_surrogate_alignment = summarize_nas_surrogate_alignment(results_baselines)
+
+        summary = {
+            "selection_strategy": "best_by_val_auroc",
+            "selection_split": selection_name,
+            "report_split": report_name,
+            "best_by_val_auroc": best_by_val_auroc,
+            "best_nas_by_val_auroc": best_nas_by_val_auroc,
+            "nas_topk_rerank": {
+                "k": int(max(1, args.combined_nas_topk_rerank)),
+                "evaluated_arch_names": [name for name, _ in arch_list if name.startswith("NAS_")],
+                "candidates_by_upper": nas_topk_records,
+            },
+            "nas_proxy_rerank": {
+                "k": int(max(0, args.combined_nas_proxy_rerank_topk)),
+                "evaluated_arch_names": [name for name, _ in arch_list if name.startswith("NAS_")],
+                "candidates_by_proxy": nas_proxy_records,
+            },
+            "nas_fusion_rerank": {
+                "k": int(max(0, args.combined_nas_fusion_rerank_topk)),
+                "upper_weight": float(args.combined_nas_fusion_upper_weight),
+                "proxy_weight": float(args.combined_nas_fusion_proxy_weight),
+                "evaluated_arch_names": [name for name, _ in arch_list if name.startswith("NAS_")],
+                "candidates_by_fusion": nas_fusion_records,
+            },
+            "nas_family_diverse_rerank": {
+                "per_family": int(max(0, args.combined_nas_diverse_per_family)),
+                "evaluated_arch_names": [name for name, _ in arch_list if name.startswith("NAS_")],
+                "candidates_by_family": nas_family_records,
+            },
+            "nas_surrogate_alignment": nas_surrogate_alignment,
+            "all": results_baselines,
+        }
         with open(os.path.join("outputs", "baselines_summary.json"), "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        res["baselines_summary"] = {"best_by_auroc": best_by_auroc}
-        res["oneclass"]["selection"] = "best_by_auroc_from_final_only_baselines"
-        if best_by_auroc is not None and best_by_auroc.get("metrics_uad") is not None:
-            res["metrics_uad"] = best_by_auroc["metrics_uad"]
+        res["baselines_summary"] = {
+            "selection_strategy": "best_by_val_auroc",
+            "best_by_val_auroc": best_by_val_auroc,
+            "best_nas_by_val_auroc": best_nas_by_val_auroc,
+            "nas_surrogate_alignment": nas_surrogate_alignment,
+        }
+        res["nas_rerank"] = {
+            "k": int(max(1, args.combined_nas_topk_rerank)),
+            "evaluated_arch_names": [name for name, _ in arch_list if name.startswith("NAS_")],
+            "candidates_by_upper": nas_topk_records,
+        }
+        res["nas_proxy_rerank"] = {
+            "k": int(max(0, args.combined_nas_proxy_rerank_topk)),
+            "evaluated_arch_names": [name for name, _ in arch_list if name.startswith("NAS_")],
+            "candidates_by_proxy": nas_proxy_records,
+        }
+        res["nas_fusion_rerank"] = {
+            "k": int(max(0, args.combined_nas_fusion_rerank_topk)),
+            "upper_weight": float(args.combined_nas_fusion_upper_weight),
+            "proxy_weight": float(args.combined_nas_fusion_proxy_weight),
+            "evaluated_arch_names": [name for name, _ in arch_list if name.startswith("NAS_")],
+            "candidates_by_fusion": nas_fusion_records,
+        }
+        selected_entry = best_by_val_auroc
+        res["oneclass"]["selection"] = "best_by_val_auroc_from_final_only_baselines"
+
+        res["final_model_selection"] = {
+            "strategy": "best_by_val_auroc",
+            "selection_split": selection_name,
+            "report_split": report_name,
+            "selected_arch_name": None if selected_entry is None else selected_entry.get("arch_name"),
+            "selected_arch": None if selected_entry is None else selected_entry.get("arch"),
+        }
+        if selected_entry is not None and selected_entry.get("metrics_uad") is not None:
+            res["metrics_uad"] = selected_entry["metrics_uad"]
 
     # -------- Save results --------
     os.makedirs("outputs", exist_ok=True)

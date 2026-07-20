@@ -18,6 +18,23 @@ SHIFT_RANGES = {
     "auto": (0.00, 0.75),
 }
 
+# Shared split defaults used by SMD and reused by other cached-dataset wrappers
+# so the structural protocol stays aligned across datasets.
+DEFAULT_TARGET_POOL_FRAC = 0.20
+DEFAULT_VAL_FRAC = 0.30
+DEFAULT_GUARD = 0
+DEFAULT_SEARCH_STEP = 4
+DEFAULT_MAX_POOL_ANOM_RATIO = 0.10
+DEFAULT_MIN_TRAIN = 0
+DEFAULT_MIN_TARGET_POOL = 32
+DEFAULT_MIN_VAL = 32
+DEFAULT_MIN_TEST = 64
+DEFAULT_MIN_ANOM_VAL = 3
+DEFAULT_MIN_ANOM_TEST = 5
+DEFAULT_ALLOW_SINGLE_CLASS_EVAL = False
+DEFAULT_SPLIT_MODE = "search"
+DEFAULT_SHIFT_LEVEL = "medium"
+
 
 def load_npz(path: str):
     if not os.path.exists(path):
@@ -576,22 +593,22 @@ def build_arg_parser():
     ap.add_argument("--out_test", default="test_mixed.npz")
     ap.add_argument("--out_meta", default="split_metadata.json")
 
-    ap.add_argument("--split_mode", choices=["search", "fixed"], default="search")
-    ap.add_argument("--shift_level", choices=sorted(SHIFT_RANGES.keys()), default="medium")
+    ap.add_argument("--split_mode", choices=["search", "fixed"], default=DEFAULT_SPLIT_MODE)
+    ap.add_argument("--shift_level", choices=sorted(SHIFT_RANGES.keys()), default=DEFAULT_SHIFT_LEVEL)
     ap.add_argument("--train_normal_frac", type=float, default=1.0)
-    ap.add_argument("--target_pool_frac", type=float, default=0.20)
-    ap.add_argument("--val_frac", type=float, default=0.30)
-    ap.add_argument("--guard", type=int, default=0)
-    ap.add_argument("--search_step", type=int, default=4)
-    ap.add_argument("--max_pool_anom_ratio", type=float, default=0.10)
+    ap.add_argument("--target_pool_frac", type=float, default=DEFAULT_TARGET_POOL_FRAC)
+    ap.add_argument("--val_frac", type=float, default=DEFAULT_VAL_FRAC)
+    ap.add_argument("--guard", type=int, default=DEFAULT_GUARD)
+    ap.add_argument("--search_step", type=int, default=DEFAULT_SEARCH_STEP)
+    ap.add_argument("--max_pool_anom_ratio", type=float, default=DEFAULT_MAX_POOL_ANOM_RATIO)
 
-    ap.add_argument("--min_train", type=int, default=0)
-    ap.add_argument("--min_target_pool", type=int, default=32)
-    ap.add_argument("--min_val", type=int, default=32)
-    ap.add_argument("--min_test", type=int, default=64)
-    ap.add_argument("--min_anom_val", type=int, default=3)
-    ap.add_argument("--min_anom_test", type=int, default=5)
-    ap.add_argument("--allow_single_class_eval", action="store_true")
+    ap.add_argument("--min_train", type=int, default=DEFAULT_MIN_TRAIN)
+    ap.add_argument("--min_target_pool", type=int, default=DEFAULT_MIN_TARGET_POOL)
+    ap.add_argument("--min_val", type=int, default=DEFAULT_MIN_VAL)
+    ap.add_argument("--min_test", type=int, default=DEFAULT_MIN_TEST)
+    ap.add_argument("--min_anom_val", type=int, default=DEFAULT_MIN_ANOM_VAL)
+    ap.add_argument("--min_anom_test", type=int, default=DEFAULT_MIN_ANOM_TEST)
+    ap.add_argument("--allow_single_class_eval", action="store_true", default=DEFAULT_ALLOW_SINGLE_CLASS_EVAL)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--strict", action="store_true")
     return ap

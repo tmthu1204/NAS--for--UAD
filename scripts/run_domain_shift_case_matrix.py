@@ -18,6 +18,7 @@ if str(PROJ_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJ_ROOT))
 
 from scripts.make_uad_smd import create_dataset
+from src.oneclass import list_oneclass_methods
 
 
 DEFAULT_CASES = {
@@ -59,6 +60,8 @@ KEY_METRICS = [
     "event_f1",
     "delay_mean",
 ]
+
+ALL_ONECLASS_METHODS = list(list_oneclass_methods())
 
 
 def parse_csv_arg(raw: str) -> list[str]:
@@ -282,6 +285,23 @@ def run_mode_for_case_seed(
     batch_size: int,
     device: str,
     combined_upper_gap: float,
+    combined_nas_topk_rerank: int,
+    combined_nas_proxy_rerank_topk: int,
+    combined_nas_fusion_rerank_topk: int,
+    combined_nas_fusion_upper_weight: float,
+    combined_nas_fusion_proxy_weight: float,
+    combined_nas_diverse_per_family: int,
+    nas_search_iters: int,
+    nas_search_strategy: str,
+    nas_compact_space: bool,
+    nas_evo_parent_pool: int,
+    nas_evo_anchor_ratio: float,
+    nas_evo_mutation_steps: int,
+    nas_evo_cross_family_ratio: float,
+    nas_evo_random_ratio: float,
+    combined_weight_tau: float,
+    combined_weight_w_min: float,
+    combined_weight_top_keep_ratio: float,
     oneclass_cli_args,
     force: bool,
 ):
@@ -310,15 +330,49 @@ def run_mode_for_case_seed(
         str(epochs_pretrain),
         "--search_candidates",
         str(search_candidates),
+        "--nas_search_iters",
+        str(nas_search_iters),
+        "--nas_search_strategy",
+        str(nas_search_strategy),
+        "--nas_evo_parent_pool",
+        str(nas_evo_parent_pool),
+        "--nas_evo_anchor_ratio",
+        str(nas_evo_anchor_ratio),
+        "--nas_evo_mutation_steps",
+        str(nas_evo_mutation_steps),
+        "--nas_evo_cross_family_ratio",
+        str(nas_evo_cross_family_ratio),
+        "--nas_evo_random_ratio",
+        str(nas_evo_random_ratio),
         "--batch_size",
         str(batch_size),
         "--device",
         device,
         "--combined_upper_gap",
         str(combined_upper_gap),
+        "--combined_nas_topk_rerank",
+        str(combined_nas_topk_rerank),
+        "--combined_nas_proxy_rerank_topk",
+        str(combined_nas_proxy_rerank_topk),
+        "--combined_nas_fusion_rerank_topk",
+        str(combined_nas_fusion_rerank_topk),
+        "--combined_nas_fusion_upper_weight",
+        str(combined_nas_fusion_upper_weight),
+        "--combined_nas_fusion_proxy_weight",
+        str(combined_nas_fusion_proxy_weight),
+        "--combined_nas_diverse_per_family",
+        str(combined_nas_diverse_per_family),
+        "--combined_weight_tau",
+        str(combined_weight_tau),
+        "--combined_weight_w_min",
+        str(combined_weight_w_min),
+        "--combined_weight_top_keep_ratio",
+        str(combined_weight_top_keep_ratio),
         "--seed",
         str(seed),
     ]
+    if nas_compact_space:
+        cmd.append("--nas_compact_space")
     cmd.extend(oneclass_cli_args)
 
     start_time = time.time()
@@ -342,33 +396,73 @@ def run_mode_for_case_seed(
 
 
 def extract_combined_baseline_info(summary: dict):
+    selection_strategy = str(summary.get("selection_strategy") or "best_by_val_auroc")
     all_entries = summary.get("all") or []
     by_arch = {}
+    by_arch_selection = {}
     for entry in all_entries:
         arch_name = entry.get("arch_name")
         if arch_name:
             by_arch[arch_name] = entry.get("metrics_uad") or {}
+            by_arch_selection[arch_name] = entry.get("selection_metrics_uad") or {}
 
     best_fixed_name = None
     best_fixed_metrics = None
-    best_fixed_auroc = float("-inf")
+    best_fixed_selection_metrics = None
+    best_fixed_val_auroc = float("-inf")
     for arch_name, metrics in by_arch.items():
         if not arch_name.startswith("Base_"):
             continue
-        auroc = float_or_none(metrics.get("auroc"))
-        if auroc is not None and auroc > best_fixed_auroc:
-            best_fixed_auroc = auroc
+        selection_metrics = by_arch_selection.get(arch_name) or {}
+        auroc = float_or_none(selection_metrics.get("auroc"))
+        if auroc is None:
+            auroc = float_or_none(metrics.get("auroc"))
+        if auroc is not None and auroc > best_fixed_val_auroc:
+            best_fixed_val_auroc = auroc
             best_fixed_name = arch_name
             best_fixed_metrics = metrics
+            best_fixed_selection_metrics = selection_metrics
 
-    best_by_auroc = summary.get("best_by_auroc") or {}
+    best_by_val_auroc = summary.get("best_by_val_auroc") or summary.get("best_by_auroc") or {}
+    selected_entry = best_by_val_auroc
+    best_nas_by_val = summary.get("best_nas_by_val_auroc") or {}
+    if not best_nas_by_val:
+        best_nas_name = None
+        best_nas_metrics = None
+        best_nas_selection_metrics = None
+        best_nas_val_auroc = float("-inf")
+        for arch_name, metrics in by_arch.items():
+            if not arch_name.startswith("NAS_"):
+                continue
+            selection_metrics = by_arch_selection.get(arch_name) or {}
+            auroc = float_or_none(selection_metrics.get("auroc"))
+            if auroc is None:
+                auroc = float_or_none(metrics.get("auroc"))
+            if auroc is not None and auroc > best_nas_val_auroc:
+                best_nas_val_auroc = auroc
+                best_nas_name = arch_name
+                best_nas_metrics = metrics
+                best_nas_selection_metrics = selection_metrics
+        best_nas_by_val = {
+            "arch_name": best_nas_name,
+            "metrics_uad": best_nas_metrics or {},
+            "selection_metrics_uad": best_nas_selection_metrics or {},
+        }
     return {
-        "winner_arch": best_by_auroc.get("arch_name"),
-        "winner_metrics": best_by_auroc.get("metrics_uad") or {},
-        "nas_metrics": by_arch.get("NAS_BestArch") or {},
+        "selection_strategy": selection_strategy,
+        "winner_arch": selected_entry.get("arch_name"),
+        "winner_metrics": selected_entry.get("metrics_uad") or {},
+        "winner_selection_metrics": selected_entry.get("selection_metrics_uad") or {},
+        "best_nas_arch": best_nas_by_val.get("arch_name"),
+        "best_nas_metrics": best_nas_by_val.get("metrics_uad") or {},
+        "best_nas_selection_metrics": best_nas_by_val.get("selection_metrics_uad") or {},
+        "nas_metrics": best_nas_by_val.get("metrics_uad") or {},
+        "nas_selection_metrics": best_nas_by_val.get("selection_metrics_uad") or {},
         "best_fixed_arch": best_fixed_name,
         "best_fixed_metrics": best_fixed_metrics or {},
+        "best_fixed_selection_metrics": best_fixed_selection_metrics or {},
         "all_by_arch": by_arch,
+        "all_by_arch_selection": by_arch_selection,
     }
 
 
@@ -377,7 +471,7 @@ def build_seed_row(case_id: str, case_info: dict, seed: int, split_meta: dict, s
     combined_metrics = combined_res.get("metrics_uad") or {}
     baseline_info = extract_combined_baseline_info(combined_summary)
     best_fixed_metrics = baseline_info["best_fixed_metrics"]
-    nas_metrics = baseline_info["nas_metrics"]
+    nas_metrics = baseline_info["best_nas_metrics"]
 
     row = {
         "case_id": case_id,
@@ -389,8 +483,10 @@ def build_seed_row(case_id: str, case_info: dict, seed: int, split_meta: dict, s
         "seed": seed,
         "pad_latent_pilot": float(case_info["pad_latent_pilot"]),
         "split_out_dir": split_meta.get("out_dir") if split_meta else None,
+        "combined_selection_strategy": baseline_info["selection_strategy"],
         "combined_winner_arch": baseline_info["winner_arch"],
         "best_fixed_arch": baseline_info["best_fixed_arch"],
+        "best_nas_arch": baseline_info["best_nas_arch"],
     }
 
     for metric in KEY_METRICS:
@@ -498,7 +594,28 @@ def build_summary_markdown(config: dict, rows: list[dict], case_summary: dict, g
     lines.append(f"- Seeds: `{', '.join(str(seed) for seed in config['seeds'])}`")
     lines.append(f"- Window/stride: `{config['window']}/{config['stride']}`")
     lines.append(f"- Split: `shift_level={config['shift_level']}`, `target_pool_frac={config['target_pool_frac']}`, `val_frac={config['val_frac']}`, `guard={config['guard']}`")
-    lines.append(f"- Train/search: `epochs_pretrain={config['epochs_pretrain']}`, `search_candidates={config['search_candidates']}`, `batch_size={config['batch_size']}`, `device={config['device']}`, `seed={config['seeds'][0]}`")
+    lines.append(
+        f"- Train/search: `epochs_pretrain={config['epochs_pretrain']}`, "
+        f"`search_candidates={config['search_candidates']}`, "
+        f"`nas_search_iters={config['nas_search_iters']}`, "
+        f"`nas_compact_space={config['nas_compact_space']}`, "
+        f"`nas_search_strategy={config['nas_search_strategy']}`, "
+        f"`nas_evo_parent_pool={config['nas_evo_parent_pool']}`, "
+        f"`nas_evo_anchor_ratio={config['nas_evo_anchor_ratio']}`, "
+        f"`nas_evo_mutation_steps={config['nas_evo_mutation_steps']}`, "
+        f"`nas_evo_cross_family_ratio={config['nas_evo_cross_family_ratio']}`, "
+        f"`nas_evo_random_ratio={config['nas_evo_random_ratio']}`, "
+        f"`combined_nas_topk_rerank={config['combined_nas_topk_rerank']}`, "
+        f"`combined_nas_proxy_rerank_topk={config['combined_nas_proxy_rerank_topk']}`, "
+        f"`combined_nas_fusion_rerank_topk={config['combined_nas_fusion_rerank_topk']}`, "
+        f"`combined_nas_fusion_upper_weight={config['combined_nas_fusion_upper_weight']}`, "
+        f"`combined_nas_fusion_proxy_weight={config['combined_nas_fusion_proxy_weight']}`, "
+        f"`combined_nas_diverse_per_family={config['combined_nas_diverse_per_family']}`, "
+        f"`weight_tau={config['combined_weight_tau']}`, "
+        f"`weight_w_min={config['combined_weight_w_min']}`, "
+        f"`weight_top_keep_ratio={config['combined_weight_top_keep_ratio']}`, "
+        f"`batch_size={config['batch_size']}`, `device={config['device']}`, `seed={config['seeds'][0]}`"
+    )
     lines.append("")
 
     lines.append("## Pair-Seed Comparison")
@@ -621,14 +738,60 @@ def parse_args():
     ap.add_argument("--min_anom_test", type=int, default=5)
     ap.add_argument("--epochs_pretrain", type=int, default=10)
     ap.add_argument("--search_candidates", type=int, default=5)
+    ap.add_argument("--nas_search_iters", type=int, default=3)
+    ap.add_argument("--nas_compact_space", action="store_true")
+    ap.add_argument("--nas_search_strategy", default="evolutionary_guided")
+    ap.add_argument("--nas_evo_parent_pool", type=int, default=3)
+    ap.add_argument("--nas_evo_anchor_ratio", type=float, default=0.2)
+    ap.add_argument("--nas_evo_mutation_steps", type=int, default=3)
+    ap.add_argument("--nas_evo_cross_family_ratio", type=float, default=0.5)
+    ap.add_argument("--nas_evo_random_ratio", type=float, default=0.2)
     ap.add_argument("--batch_size", type=int, default=64)
-    ap.add_argument("--oneclass_method", default="deepsvdd", choices=["deepsvdd", "autoencoder", "knn_distance", "oneclass_svm", "svdd", "prototype_oneclass", "mahalanobis_head", "gmm_head"])
+    ap.add_argument("--combined_nas_topk_rerank", type=int, default=5)
+    ap.add_argument("--combined_nas_proxy_rerank_topk", type=int, default=0)
+    ap.add_argument("--combined_nas_fusion_rerank_topk", type=int, default=0)
+    ap.add_argument("--combined_nas_fusion_upper_weight", type=float, default=1.0)
+    ap.add_argument("--combined_nas_fusion_proxy_weight", type=float, default=1.0)
+    ap.add_argument("--combined_nas_diverse_per_family", type=int, default=0)
+    ap.add_argument("--oneclass_method", default="deepsvdd", choices=ALL_ONECLASS_METHODS)
+    ap.add_argument("--weighting_oneclass_method", default=None, choices=ALL_ONECLASS_METHODS)
+    ap.add_argument("--final_oneclass_method", default=None, choices=ALL_ONECLASS_METHODS)
     ap.add_argument("--oneclass_epochs", type=int, default=10)
     ap.add_argument("--oneclass_final_epochs", type=int, default=20)
     ap.add_argument("--oneclass_lr", type=float, default=1e-3)
     ap.add_argument("--oneclass_batch_size", type=int, default=1024)
     ap.add_argument("--oneclass_max_fit", type=int, default=5000)
     ap.add_argument("--knn_k", type=int, default=5)
+    ap.add_argument("--iforest_n_estimators", type=int, default=100)
+    ap.add_argument("--iforest_max_samples", default="auto")
+    ap.add_argument("--iforest_contamination", default="auto")
+    ap.add_argument("--iforest_max_features", type=float, default=1.0)
+    ap.add_argument("--lof_hidden_dim", type=int, default=128)
+    ap.add_argument("--lof_rep_dim", type=int, default=64)
+    ap.add_argument("--lof_n_neighbors", type=int, default=20)
+    ap.add_argument("--lof_metric", default="minkowski")
+    ap.add_argument("--lof_p", type=int, default=2)
+    ap.add_argument("--flow_hidden_dim", type=int, default=128)
+    ap.add_argument("--flow_rep_dim", type=int, default=64)
+    ap.add_argument("--flow_layers", type=int, default=4)
+    ap.add_argument("--flow_warmup_epochs", type=int, default=2)
+    ap.add_argument("--flow_scale_clip", type=float, default=2.0)
+    ap.add_argument("--dagmm_hidden_dim", type=int, default=128)
+    ap.add_argument("--dagmm_latent_dim", type=int, default=16)
+    ap.add_argument("--dagmm_est_hidden_dim", type=int, default=64)
+    ap.add_argument("--dagmm_components", type=int, default=3)
+    ap.add_argument("--dagmm_lambda_energy", type=float, default=0.1)
+    ap.add_argument("--dagmm_lambda_cov_diag", type=float, default=5e-3)
+    ap.add_argument("--dagmm_warmup_epochs", type=int, default=2)
+    ap.add_argument("--drocc_hidden_dim", type=int, default=128)
+    ap.add_argument("--drocc_rep_dim", type=int, default=64)
+    ap.add_argument("--drocc_radius", type=float, default=1.0)
+    ap.add_argument("--drocc_gamma", type=float, default=2.0)
+    ap.add_argument("--drocc_adv_steps", type=int, default=5)
+    ap.add_argument("--drocc_adv_step_size", type=float, default=0.1)
+    ap.add_argument("--drocc_warmup_epochs", type=int, default=2)
+    ap.add_argument("--drocc_adv_weight", type=float, default=1.0)
+    ap.add_argument("--drocc_compactness_weight", type=float, default=0.1)
     ap.add_argument("--ocsvm_nu", type=float, default=0.05)
     ap.add_argument("--ocsvm_kernel", default="rbf", choices=["linear", "rbf", "poly", "sigmoid"])
     ap.add_argument("--ocsvm_gamma", default="scale")
@@ -657,6 +820,9 @@ def parse_args():
     ap.add_argument("--proto_separation_margin", type=float, default=1.0)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--combined_upper_gap", type=float, default=1.0)
+    ap.add_argument("--combined_weight_tau", type=float, default=1.0)
+    ap.add_argument("--combined_weight_w_min", type=float, default=0.05)
+    ap.add_argument("--combined_weight_top_keep_ratio", type=float, default=1.0)
     ap.add_argument("--split_seed", type=int, default=42)
     ap.add_argument("--force_preprocess", action="store_true")
     ap.add_argument("--force_split", action="store_true")
@@ -675,6 +841,36 @@ def main():
         "--oneclass_batch_size", str(args.oneclass_batch_size),
         "--oneclass_max_fit", str(args.oneclass_max_fit),
         "--knn_k", str(args.knn_k),
+        "--iforest_n_estimators", str(args.iforest_n_estimators),
+        "--iforest_max_samples", str(args.iforest_max_samples),
+        "--iforest_contamination", str(args.iforest_contamination),
+        "--iforest_max_features", str(args.iforest_max_features),
+        "--lof_hidden_dim", str(args.lof_hidden_dim),
+        "--lof_rep_dim", str(args.lof_rep_dim),
+        "--lof_n_neighbors", str(args.lof_n_neighbors),
+        "--lof_metric", str(args.lof_metric),
+        "--lof_p", str(args.lof_p),
+        "--flow_hidden_dim", str(args.flow_hidden_dim),
+        "--flow_rep_dim", str(args.flow_rep_dim),
+        "--flow_layers", str(args.flow_layers),
+        "--flow_warmup_epochs", str(args.flow_warmup_epochs),
+        "--flow_scale_clip", str(args.flow_scale_clip),
+        "--dagmm_hidden_dim", str(args.dagmm_hidden_dim),
+        "--dagmm_latent_dim", str(args.dagmm_latent_dim),
+        "--dagmm_est_hidden_dim", str(args.dagmm_est_hidden_dim),
+        "--dagmm_components", str(args.dagmm_components),
+        "--dagmm_lambda_energy", str(args.dagmm_lambda_energy),
+        "--dagmm_lambda_cov_diag", str(args.dagmm_lambda_cov_diag),
+        "--dagmm_warmup_epochs", str(args.dagmm_warmup_epochs),
+        "--drocc_hidden_dim", str(args.drocc_hidden_dim),
+        "--drocc_rep_dim", str(args.drocc_rep_dim),
+        "--drocc_radius", str(args.drocc_radius),
+        "--drocc_gamma", str(args.drocc_gamma),
+        "--drocc_adv_steps", str(args.drocc_adv_steps),
+        "--drocc_adv_step_size", str(args.drocc_adv_step_size),
+        "--drocc_warmup_epochs", str(args.drocc_warmup_epochs),
+        "--drocc_adv_weight", str(args.drocc_adv_weight),
+        "--drocc_compactness_weight", str(args.drocc_compactness_weight),
         "--ocsvm_nu", str(args.ocsvm_nu),
         "--ocsvm_kernel", args.ocsvm_kernel,
         "--ocsvm_gamma", str(args.ocsvm_gamma),
@@ -702,6 +898,10 @@ def main():
         "--proto_separation_weight", str(args.proto_separation_weight),
         "--proto_separation_margin", str(args.proto_separation_margin),
     ]
+    if args.weighting_oneclass_method:
+        oneclass_cli_args.extend(["--weighting_oneclass_method", args.weighting_oneclass_method])
+    if args.final_oneclass_method:
+        oneclass_cli_args.extend(["--final_oneclass_method", args.final_oneclass_method])
     processed_root = Path(args.processed_root)
     experiments_root = Path(args.experiments_root)
     output_root = Path(args.output_root)
@@ -805,9 +1005,26 @@ def main():
                 seed=seed,
                 epochs_pretrain=args.epochs_pretrain,
                 search_candidates=args.search_candidates,
+                nas_search_iters=args.nas_search_iters,
+                nas_compact_space=args.nas_compact_space,
+                nas_search_strategy=args.nas_search_strategy,
+                nas_evo_parent_pool=args.nas_evo_parent_pool,
+                nas_evo_anchor_ratio=args.nas_evo_anchor_ratio,
+                nas_evo_mutation_steps=args.nas_evo_mutation_steps,
+                nas_evo_cross_family_ratio=args.nas_evo_cross_family_ratio,
+                nas_evo_random_ratio=args.nas_evo_random_ratio,
                 batch_size=args.batch_size,
                 device=args.device,
                 combined_upper_gap=args.combined_upper_gap,
+                combined_nas_topk_rerank=args.combined_nas_topk_rerank,
+                combined_nas_proxy_rerank_topk=args.combined_nas_proxy_rerank_topk,
+                combined_nas_fusion_rerank_topk=args.combined_nas_fusion_rerank_topk,
+                combined_nas_fusion_upper_weight=args.combined_nas_fusion_upper_weight,
+                combined_nas_fusion_proxy_weight=args.combined_nas_fusion_proxy_weight,
+                combined_nas_diverse_per_family=args.combined_nas_diverse_per_family,
+                combined_weight_tau=args.combined_weight_tau,
+                combined_weight_w_min=args.combined_weight_w_min,
+                combined_weight_top_keep_ratio=args.combined_weight_top_keep_ratio,
                 oneclass_cli_args=oneclass_cli_args,
                 force=args.force_run,
             )
@@ -819,9 +1036,26 @@ def main():
                 seed=seed,
                 epochs_pretrain=args.epochs_pretrain,
                 search_candidates=args.search_candidates,
+                nas_search_iters=args.nas_search_iters,
+                nas_compact_space=args.nas_compact_space,
+                nas_search_strategy=args.nas_search_strategy,
+                nas_evo_parent_pool=args.nas_evo_parent_pool,
+                nas_evo_anchor_ratio=args.nas_evo_anchor_ratio,
+                nas_evo_mutation_steps=args.nas_evo_mutation_steps,
+                nas_evo_cross_family_ratio=args.nas_evo_cross_family_ratio,
+                nas_evo_random_ratio=args.nas_evo_random_ratio,
                 batch_size=args.batch_size,
                 device=args.device,
                 combined_upper_gap=args.combined_upper_gap,
+                combined_nas_topk_rerank=args.combined_nas_topk_rerank,
+                combined_nas_proxy_rerank_topk=args.combined_nas_proxy_rerank_topk,
+                combined_nas_fusion_rerank_topk=args.combined_nas_fusion_rerank_topk,
+                combined_nas_fusion_upper_weight=args.combined_nas_fusion_upper_weight,
+                combined_nas_fusion_proxy_weight=args.combined_nas_fusion_proxy_weight,
+                combined_nas_diverse_per_family=args.combined_nas_diverse_per_family,
+                combined_weight_tau=args.combined_weight_tau,
+                combined_weight_w_min=args.combined_weight_w_min,
+                combined_weight_top_keep_ratio=args.combined_weight_top_keep_ratio,
                 oneclass_cli_args=oneclass_cli_args,
                 force=args.force_run,
             )
@@ -851,8 +1085,27 @@ def main():
             "guard": args.guard,
             "epochs_pretrain": args.epochs_pretrain,
             "search_candidates": args.search_candidates,
+            "nas_search_iters": args.nas_search_iters,
+            "nas_compact_space": args.nas_compact_space,
+            "nas_search_strategy": args.nas_search_strategy,
+            "nas_evo_parent_pool": args.nas_evo_parent_pool,
+            "nas_evo_anchor_ratio": args.nas_evo_anchor_ratio,
+            "nas_evo_mutation_steps": args.nas_evo_mutation_steps,
+            "nas_evo_cross_family_ratio": args.nas_evo_cross_family_ratio,
+            "nas_evo_random_ratio": args.nas_evo_random_ratio,
+            "combined_nas_topk_rerank": args.combined_nas_topk_rerank,
+            "combined_nas_proxy_rerank_topk": args.combined_nas_proxy_rerank_topk,
+            "combined_nas_fusion_rerank_topk": args.combined_nas_fusion_rerank_topk,
+            "combined_nas_fusion_upper_weight": args.combined_nas_fusion_upper_weight,
+            "combined_nas_fusion_proxy_weight": args.combined_nas_fusion_proxy_weight,
+            "combined_nas_diverse_per_family": args.combined_nas_diverse_per_family,
             "batch_size": args.batch_size,
+            "combined_weight_tau": args.combined_weight_tau,
+            "combined_weight_w_min": args.combined_weight_w_min,
+            "combined_weight_top_keep_ratio": args.combined_weight_top_keep_ratio,
             "oneclass_method": args.oneclass_method,
+            "weighting_oneclass_method": args.weighting_oneclass_method,
+            "final_oneclass_method": args.final_oneclass_method,
             "oneclass_epochs": args.oneclass_epochs,
             "oneclass_final_epochs": args.oneclass_final_epochs,
             "oneclass_lr": args.oneclass_lr,

@@ -1,4 +1,5 @@
 __pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -9,8 +10,20 @@ build/
 .venv/
 env/
 venv/
-external/
-.codex/
-data/
-outputs/
-results/
+.ipynb_checkpoints/
+
+# Local-only large data, generated splits, model outputs, and experiment caches.
+/data/
+/external/
+/outputs/
+/results/
+/runs/
+/tmp/
+/tmp_smoke/
+/tmp_rule_tryouts/
+
+# Local agent/planning state and thesis drafting files are not needed to run code.
+/.agents/
+/.codex/
+/.planning/
+/thesis/
