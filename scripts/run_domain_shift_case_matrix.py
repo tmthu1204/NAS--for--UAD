@@ -304,6 +304,7 @@ def run_mode_for_case_seed(
     combined_weight_top_keep_ratio: float,
     oneclass_cli_args,
     force: bool,
+    pipeline_extra_args=None,
 ):
     ensure_dir(run_dir)
     result_path = run_dir / f"{mode}_results.json"
@@ -374,6 +375,8 @@ def run_mode_for_case_seed(
     if nas_compact_space:
         cmd.append("--nas_compact_space")
     cmd.extend(oneclass_cli_args)
+    if pipeline_extra_args:
+        cmd.extend([str(x) for x in pipeline_extra_args])
 
     start_time = time.time()
     code = run_cmd(cmd, PROJ_ROOT, log_path)

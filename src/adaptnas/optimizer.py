@@ -95,7 +95,8 @@ class AdaptNASOptimizer:
         loss_d = loss_d_s + loss_d_t
 
         # ----- Combined lower-level objective -----
-        loss_lower = self.alpha * (loss_s - loss_d) + (1 - self.alpha) * loss_t
+        # Domain loss is added because the model applies GRL before the discriminator.
+        loss_lower = self.alpha * (loss_s + loss_d) + (1 - self.alpha) * loss_t
 
         return loss_lower, loss_s, loss_t, loss_d
 

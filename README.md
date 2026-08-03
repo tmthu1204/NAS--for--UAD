@@ -39,6 +39,11 @@ adaptnas_combined:
 - `deepsvdd` (default)
 - `autoencoder`
 - `knn_distance`
+- `isolation_forest`
+- `lof_head`
+- `normalizing_flow_head`
+- `dagmm_head`
+- `drocc_head`
 - `oneclass_svm`
 - `svdd`
 - `prototype_oneclass`

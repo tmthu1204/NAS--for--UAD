@@ -148,7 +148,8 @@ def train_bilevel(model, ds_source, ds_target_pseudo, val_loader, device,
             dlab_t = torch.ones(d_t.size(0), dtype=torch.long, device=device)
             loss_d = F.cross_entropy(d_s, dlab_s) + F.cross_entropy(d_t, dlab_t)
 
-            loss_lower = alpha * (loss_s - loss_d) + (1 - alpha) * loss_t
+            # Domain loss is added because the model applies GRL before the discriminator.
+            loss_lower = alpha * (loss_s + loss_d) + (1 - alpha) * loss_t
         else:
             loss_lower, _, _, _ = opt._compute_losses(xb, yb, xt, yt, p, yt_w=yt_w)
 

@@ -64,6 +64,11 @@ def parse_args():
     ap.add_argument("--combined_weight_tau", type=float, default=1.0)
     ap.add_argument("--combined_weight_w_min", type=float, default=0.05)
     ap.add_argument("--combined_weight_top_keep_ratio", type=float, default=1.0)
+    ap.add_argument("--combined_search_candidate_warmup_steps", type=int, default=None)
+    ap.add_argument("--combined_search_steps", type=int, default=None)
+    ap.add_argument("--combined_final_candidate_warmup_steps", type=int, default=None)
+    ap.add_argument("--combined_final_steps", type=int, default=None)
+    ap.add_argument("--combined_final_patience", type=int, default=None)
     ap.add_argument("--oneclass_method", default="deepsvdd")
     ap.add_argument("--weighting_oneclass_method", default=None)
     ap.add_argument("--final_oneclass_method", default=None)
@@ -210,6 +215,21 @@ def build_oneclass_cli_args(args):
         cli.extend(["--weighting_oneclass_method", args.weighting_oneclass_method])
     if args.final_oneclass_method:
         cli.extend(["--final_oneclass_method", args.final_oneclass_method])
+    return cli
+
+
+def build_pipeline_extra_args(args):
+    cli = []
+    for name in (
+        "combined_search_candidate_warmup_steps",
+        "combined_search_steps",
+        "combined_final_candidate_warmup_steps",
+        "combined_final_steps",
+        "combined_final_patience",
+    ):
+        value = getattr(args, name)
+        if value is not None:
+            cli.extend([f"--{name}", str(value)])
     return cli
 
 
@@ -431,6 +451,7 @@ def main():
     output_root = Path(args.output_root) / args.dataset_name
     ensure_dir(output_root)
     oneclass_cli_args = build_oneclass_cli_args(args)
+    pipeline_extra_args = build_pipeline_extra_args(args)
 
     rows = []
     for meta in manifest:
@@ -467,6 +488,7 @@ def main():
             combined_weight_top_keep_ratio=args.combined_weight_top_keep_ratio,
             oneclass_cli_args=oneclass_cli_args,
             force=args.force_run,
+            pipeline_extra_args=pipeline_extra_args,
         )
         run_mode_for_case_seed(
             py,
@@ -498,6 +520,7 @@ def main():
             combined_weight_top_keep_ratio=args.combined_weight_top_keep_ratio,
             oneclass_cli_args=oneclass_cli_args,
             force=args.force_run,
+            pipeline_extra_args=pipeline_extra_args,
         )
         rows.append(
             build_case_row(
@@ -535,6 +558,11 @@ def main():
             "combined_weight_tau": args.combined_weight_tau,
             "combined_weight_w_min": args.combined_weight_w_min,
             "combined_weight_top_keep_ratio": args.combined_weight_top_keep_ratio,
+            "combined_search_candidate_warmup_steps": args.combined_search_candidate_warmup_steps,
+            "combined_search_steps": args.combined_search_steps,
+            "combined_final_candidate_warmup_steps": args.combined_final_candidate_warmup_steps,
+            "combined_final_steps": args.combined_final_steps,
+            "combined_final_patience": args.combined_final_patience,
             "oneclass_method": args.oneclass_method,
             "weighting_oneclass_method": args.weighting_oneclass_method,
             "final_oneclass_method": args.final_oneclass_method,

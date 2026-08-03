@@ -1,0 +1,3810 @@
+[
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-2",
+    "target_entity": "A-1",
+    "same_entity": false,
+    "source_machine": "A-2",
+    "target_machine": "A-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-2__to__A-1",
+    "train_normal_count": 40,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 15,
+    "val_normal_count": 13,
+    "val_anomaly_count": 2,
+    "test_count": 60,
+    "test_normal_count": 59,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 59,
+      "val_start": 59,
+      "val_end": 74,
+      "test_start": 74,
+      "test_end": 134
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 93.14961242675781,
+        "feature_std_l2": 27.640329360961914,
+        "n_source_used": 40,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 0.8,
+        "domain_acc": 0.9411764705882353,
+        "feature_mean_l2": 13385317.0,
+        "feature_std_l2": 34125996.0,
+        "n_source_used": 40,
+        "n_target_used": 15
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 3359272.75,
+        "feature_std_l2": 18090240.0,
+        "n_source_used": 40,
+        "n_target_used": 60
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 10.160579681396484,
+      "n_source_used": 40,
+      "n_target_used": 40
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 2171717.5,
+      "feature_std_l2": 17441464.0,
+      "n_source_used": 40,
+      "n_target_used": 131
+    },
+    "global_pad_rank": 8,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 40,
+      "pad_target_n": 40
+    },
+    "buildable_pad_rank": 5,
+    "selection_order": 1,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-3",
+    "target_entity": "A-1",
+    "same_entity": false,
+    "source_machine": "A-3",
+    "target_machine": "A-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-3__to__A-1",
+    "train_normal_count": 41,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 15,
+    "val_normal_count": 13,
+    "val_anomaly_count": 2,
+    "test_count": 60,
+    "test_normal_count": 59,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 59,
+      "val_start": 59,
+      "val_end": 74,
+      "test_start": 74,
+      "test_end": 134
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 93.22695922851562,
+        "feature_std_l2": 25.4498291015625,
+        "n_source_used": 41,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 0.8,
+        "domain_acc": 0.9411764705882353,
+        "feature_mean_l2": 13385317.0,
+        "feature_std_l2": 34125996.0,
+        "n_source_used": 41,
+        "n_target_used": 15
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 3359272.75,
+        "feature_std_l2": 18090240.0,
+        "n_source_used": 41,
+        "n_target_used": 60
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 9.414706230163574,
+      "n_source_used": 41,
+      "n_target_used": 41
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 2171717.5,
+      "feature_std_l2": 17441464.0,
+      "n_source_used": 41,
+      "n_target_used": 131
+    },
+    "global_pad_rank": 14,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 41,
+      "pad_target_n": 41
+    },
+    "buildable_pad_rank": 8,
+    "selection_order": 2,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-4",
+    "target_entity": "A-1",
+    "same_entity": false,
+    "source_machine": "A-4",
+    "target_machine": "A-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-4__to__A-1",
+    "train_normal_count": 41,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 15,
+    "val_normal_count": 13,
+    "val_anomaly_count": 2,
+    "test_count": 60,
+    "test_normal_count": 59,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 59,
+      "val_start": 59,
+      "val_end": 74,
+      "test_start": 74,
+      "test_end": 134
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 93.38482666015625,
+        "feature_std_l2": 27.662940979003906,
+        "n_source_used": 41,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 0.8,
+        "domain_acc": 0.9411764705882353,
+        "feature_mean_l2": 13385317.0,
+        "feature_std_l2": 34125996.0,
+        "n_source_used": 41,
+        "n_target_used": 15
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 3359272.75,
+        "feature_std_l2": 18090240.0,
+        "n_source_used": 41,
+        "n_target_used": 60
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 9.460956573486328,
+      "n_source_used": 41,
+      "n_target_used": 41
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 2171717.5,
+      "feature_std_l2": 17441464.0,
+      "n_source_used": 41,
+      "n_target_used": 131
+    },
+    "global_pad_rank": 18,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 41,
+      "pad_target_n": 41
+    },
+    "buildable_pad_rank": 11,
+    "selection_order": 3,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-7",
+    "target_entity": "A-4",
+    "same_entity": false,
+    "source_machine": "A-7",
+    "target_machine": "A-4",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-7__to__A-4",
+    "train_normal_count": 43,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 12,
+    "val_anomaly_count": 1,
+    "test_count": 54,
+    "test_normal_count": 52,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 58,
+      "val_start": 58,
+      "val_end": 71,
+      "test_start": 71,
+      "test_end": 125
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 15.128279685974121,
+        "feature_std_l2": 25.530921936035156,
+        "n_source_used": 43,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 20.95315933227539,
+        "feature_std_l2": 41.46095657348633,
+        "n_source_used": 43,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 15.439342498779297,
+        "feature_std_l2": 32.788490295410156,
+        "n_source_used": 43,
+        "n_target_used": 54
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 4.963604927062988,
+      "n_source_used": 43,
+      "n_target_used": 43
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 15.456104278564453,
+      "feature_std_l2": 33.49614334106445,
+      "n_source_used": 43,
+      "n_target_used": 122
+    },
+    "global_pad_rank": 34,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 43,
+      "pad_target_n": 43
+    },
+    "buildable_pad_rank": 21,
+    "selection_order": 4,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-8",
+    "target_entity": "A-4",
+    "same_entity": false,
+    "source_machine": "A-8",
+    "target_machine": "A-4",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-8__to__A-4",
+    "train_normal_count": 10,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 12,
+    "val_anomaly_count": 1,
+    "test_count": 54,
+    "test_normal_count": 52,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 58,
+      "val_start": 58,
+      "val_end": 71,
+      "test_start": 71,
+      "test_end": 125
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.982799530029297,
+        "feature_std_l2": 33.437294006347656,
+        "n_source_used": 10,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 24.05320930480957,
+        "feature_std_l2": 46.75912094116211,
+        "n_source_used": 10,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.359920501708984,
+        "feature_std_l2": 39.275943756103516,
+        "n_source_used": 10,
+        "n_target_used": 54
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 3.2704670429229736,
+      "n_source_used": 10,
+      "n_target_used": 10
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 19.35297393798828,
+      "feature_std_l2": 39.86297607421875,
+      "n_source_used": 10,
+      "n_target_used": 122
+    },
+    "global_pad_rank": 38,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 10,
+      "pad_target_n": 10
+    },
+    "buildable_pad_rank": 25,
+    "selection_order": 5,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-9",
+    "target_entity": "A-2",
+    "same_entity": false,
+    "source_machine": "A-9",
+    "target_machine": "A-2",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-9__to__A-2",
+    "train_normal_count": 10,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 12,
+    "val_normal_count": 10,
+    "val_anomaly_count": 2,
+    "test_count": 52,
+    "test_normal_count": 50,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 58,
+      "val_start": 58,
+      "val_end": 70,
+      "test_start": 70,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.0479736328125,
+        "feature_std_l2": 30.75352668762207,
+        "n_source_used": 10,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 24.564165115356445,
+        "feature_std_l2": 47.17924880981445,
+        "n_source_used": 10,
+        "n_target_used": 12
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.92389488220215,
+        "feature_std_l2": 37.99474334716797,
+        "n_source_used": 10,
+        "n_target_used": 52
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 3.7923941612243652,
+      "n_source_used": 10,
+      "n_target_used": 10
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 19.271398544311523,
+      "feature_std_l2": 39.457218170166016,
+      "n_source_used": 10,
+      "n_target_used": 118
+    },
+    "global_pad_rank": 43,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 10,
+      "pad_target_n": 10
+    },
+    "buildable_pad_rank": 28,
+    "selection_order": 6,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-9",
+    "target_entity": "A-4",
+    "same_entity": false,
+    "source_machine": "A-9",
+    "target_machine": "A-4",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-9__to__A-4",
+    "train_normal_count": 10,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 12,
+    "val_anomaly_count": 1,
+    "test_count": 54,
+    "test_normal_count": 52,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 58,
+      "val_start": 58,
+      "val_end": 71,
+      "test_start": 71,
+      "test_end": 125
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.981042861938477,
+        "feature_std_l2": 33.43698501586914,
+        "n_source_used": 10,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 24.05412483215332,
+        "feature_std_l2": 46.75944137573242,
+        "n_source_used": 10,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.363924026489258,
+        "feature_std_l2": 39.27605056762695,
+        "n_source_used": 10,
+        "n_target_used": 54
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 2.972554922103882,
+      "n_source_used": 10,
+      "n_target_used": 10
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 19.353445053100586,
+      "feature_std_l2": 39.86284255981445,
+      "n_source_used": 10,
+      "n_target_used": 122
+    },
+    "global_pad_rank": 44,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 10,
+      "pad_target_n": 10
+    },
+    "buildable_pad_rank": 29,
+    "selection_order": 7,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "D-1",
+    "target_entity": "D-11",
+    "same_entity": false,
+    "source_machine": "D-1",
+    "target_machine": "D-11",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\D-1__to__D-11",
+    "train_normal_count": 43,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 11,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 12,
+    "val_normal_count": 10,
+    "val_anomaly_count": 2,
+    "test_count": 48,
+    "test_normal_count": 47,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 44,
+      "pool_end": 55,
+      "val_start": 55,
+      "val_end": 67,
+      "test_start": 67,
+      "test_end": 115
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.39246940612793,
+        "feature_std_l2": 23.477930068969727,
+        "n_source_used": 43,
+        "n_target_used": 11
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.352561950683594,
+        "feature_std_l2": 23.47591781616211,
+        "n_source_used": 43,
+        "n_target_used": 12
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.82843589782715,
+        "feature_std_l2": 23.46753692626953,
+        "n_source_used": 43,
+        "n_target_used": 48
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 3.3651716709136963,
+      "n_source_used": 43,
+      "n_target_used": 43
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 8623502.0,
+      "feature_std_l2": 41072348.0,
+      "n_source_used": 43,
+      "n_target_used": 112
+    },
+    "global_pad_rank": 49,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 43,
+      "pad_target_n": 43
+    },
+    "buildable_pad_rank": 32,
+    "selection_order": 8,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "D-2",
+    "target_entity": "D-8",
+    "same_entity": false,
+    "source_machine": "D-2",
+    "target_machine": "D-8",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\D-2__to__D-8",
+    "train_normal_count": 44,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 11,
+    "val_anomaly_count": 2,
+    "test_count": 53,
+    "test_normal_count": 52,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 44,
+      "pool_end": 56,
+      "val_start": 56,
+      "val_end": 69,
+      "test_start": 69,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.22712516784668,
+        "feature_std_l2": 29.06020164489746,
+        "n_source_used": 44,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 30889188.0,
+        "feature_std_l2": 72441568.0,
+        "n_source_used": 44,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.22712516784668,
+        "feature_std_l2": 29.06020164489746,
+        "n_source_used": 44,
+        "n_target_used": 53
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 5.176743984222412,
+      "n_source_used": 44,
+      "n_target_used": 44
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 1693751.625,
+      "feature_std_l2": 12954684.0,
+      "n_source_used": 44,
+      "n_target_used": 119
+    },
+    "global_pad_rank": 326,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 44,
+      "pad_target_n": 44
+    },
+    "buildable_pad_rank": 46,
+    "selection_order": 9,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "D-3",
+    "target_entity": "D-11",
+    "same_entity": false,
+    "source_machine": "D-3",
+    "target_machine": "D-11",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\D-3__to__D-11",
+    "train_normal_count": 44,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 11,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 12,
+    "val_normal_count": 10,
+    "val_anomaly_count": 2,
+    "test_count": 48,
+    "test_normal_count": 47,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 44,
+      "pool_end": 55,
+      "val_start": 55,
+      "val_end": 67,
+      "test_start": 67,
+      "test_end": 115
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.421979904174805,
+        "feature_std_l2": 26.545608520507812,
+        "n_source_used": 44,
+        "n_target_used": 11
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.402339935302734,
+        "feature_std_l2": 26.524490356445312,
+        "n_source_used": 44,
+        "n_target_used": 12
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.67074203491211,
+        "feature_std_l2": 26.52764129638672,
+        "n_source_used": 44,
+        "n_target_used": 48
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 2.9082467555999756,
+      "n_source_used": 44,
+      "n_target_used": 44
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 8623499.0,
+      "feature_std_l2": 41072340.0,
+      "n_source_used": 44,
+      "n_target_used": 112
+    },
+    "global_pad_rank": 328,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 44,
+      "pad_target_n": 44
+    },
+    "buildable_pad_rank": 47,
+    "selection_order": 10,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "D-5",
+    "target_entity": "D-8",
+    "same_entity": false,
+    "source_machine": "D-5",
+    "target_machine": "D-8",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\D-5__to__D-8",
+    "train_normal_count": 39,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 11,
+    "val_anomaly_count": 2,
+    "test_count": 53,
+    "test_normal_count": 52,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 44,
+      "pool_end": 56,
+      "val_start": 56,
+      "val_end": 69,
+      "test_start": 69,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.93217658996582,
+        "feature_std_l2": 22.893802642822266,
+        "n_source_used": 39,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 30889186.0,
+        "feature_std_l2": 72441568.0,
+        "n_source_used": 39,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.93217658996582,
+        "feature_std_l2": 22.893802642822266,
+        "n_source_used": 39,
+        "n_target_used": 53
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 7.2339982986450195,
+      "n_source_used": 39,
+      "n_target_used": 39
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 1693751.625,
+      "feature_std_l2": 12954684.0,
+      "n_source_used": 39,
+      "n_target_used": 119
+    },
+    "global_pad_rank": 336,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 39,
+      "pad_target_n": 39
+    },
+    "buildable_pad_rank": 53,
+    "selection_order": 11,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "D-6",
+    "target_entity": "D-11",
+    "same_entity": false,
+    "source_machine": "D-6",
+    "target_machine": "D-11",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\D-6__to__D-11",
+    "train_normal_count": 39,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 11,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 12,
+    "val_normal_count": 10,
+    "val_anomaly_count": 2,
+    "test_count": 48,
+    "test_normal_count": 47,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 44,
+      "pool_end": 55,
+      "val_start": 55,
+      "val_end": 67,
+      "test_start": 67,
+      "test_end": 115
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.458904266357422,
+        "feature_std_l2": 21.514114379882812,
+        "n_source_used": 39,
+        "n_target_used": 11
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.424701690673828,
+        "feature_std_l2": 21.489334106445312,
+        "n_source_used": 39,
+        "n_target_used": 12
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.730064392089844,
+        "feature_std_l2": 21.497108459472656,
+        "n_source_used": 39,
+        "n_target_used": 48
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 3.674816608428955,
+      "n_source_used": 39,
+      "n_target_used": 39
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 8623502.0,
+      "feature_std_l2": 41072348.0,
+      "n_source_used": 39,
+      "n_target_used": 112
+    },
+    "global_pad_rank": 337,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 39,
+      "pad_target_n": 39
+    },
+    "buildable_pad_rank": 54,
+    "selection_order": 12,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "D-6",
+    "target_entity": "D-8",
+    "same_entity": false,
+    "source_machine": "D-6",
+    "target_machine": "D-8",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\D-6__to__D-8",
+    "train_normal_count": 39,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 11,
+    "val_anomaly_count": 2,
+    "test_count": 53,
+    "test_normal_count": 52,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 44,
+      "pool_end": 56,
+      "val_start": 56,
+      "val_end": 69,
+      "test_start": 69,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.484907150268555,
+        "feature_std_l2": 21.51701545715332,
+        "n_source_used": 39,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 30889188.0,
+        "feature_std_l2": 72441568.0,
+        "n_source_used": 39,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.484907150268555,
+        "feature_std_l2": 21.51701545715332,
+        "n_source_used": 39,
+        "n_target_used": 53
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 6.98569917678833,
+      "n_source_used": 39,
+      "n_target_used": 39
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 1693751.625,
+      "feature_std_l2": 12954684.0,
+      "n_source_used": 39,
+      "n_target_used": 119
+    },
+    "global_pad_rank": 341,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 39,
+      "pad_target_n": 39
+    },
+    "buildable_pad_rank": 57,
+    "selection_order": 13,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-4",
+    "target_entity": "G-3",
+    "same_entity": false,
+    "source_machine": "G-4",
+    "target_machine": "G-3",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-4__to__G-3",
+    "train_normal_count": 38,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 14,
+    "val_normal_count": 12,
+    "val_anomaly_count": 2,
+    "test_count": 56,
+    "test_normal_count": 55,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 40,
+      "pool_end": 52,
+      "val_start": 52,
+      "val_end": 66,
+      "test_start": 66,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 16731644.0,
+        "feature_std_l2": 37413100.0,
+        "n_source_used": 38,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 13.491793632507324,
+        "feature_std_l2": 26.48700714111328,
+        "n_source_used": 38,
+        "n_target_used": 14
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 8028435.0,
+        "feature_std_l2": 31908210.0,
+        "n_source_used": 38,
+        "n_target_used": 56
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 4.3389692306518555,
+      "n_source_used": 38,
+      "n_target_used": 38
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 7556174.0,
+      "feature_std_l2": 31013080.0,
+      "n_source_used": 38,
+      "n_target_used": 119
+    },
+    "global_pad_rank": 120,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 38,
+      "pad_target_n": 38
+    },
+    "buildable_pad_rank": 104,
+    "selection_order": 14,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-6",
+    "target_entity": "G-3",
+    "same_entity": false,
+    "source_machine": "G-6",
+    "target_machine": "G-3",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-6__to__G-3",
+    "train_normal_count": 44,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 14,
+    "val_normal_count": 12,
+    "val_anomaly_count": 2,
+    "test_count": 56,
+    "test_normal_count": 55,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 40,
+      "pool_end": 52,
+      "val_start": 52,
+      "val_end": 66,
+      "test_start": 66,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 16731644.0,
+        "feature_std_l2": 37413100.0,
+        "n_source_used": 44,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 12.460611343383789,
+        "feature_std_l2": 30.291854858398438,
+        "n_source_used": 44,
+        "n_target_used": 14
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 8028435.0,
+        "feature_std_l2": 31908210.0,
+        "n_source_used": 44,
+        "n_target_used": 56
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 3.7904911041259766,
+      "n_source_used": 44,
+      "n_target_used": 44
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 7556174.0,
+      "feature_std_l2": 31013080.0,
+      "n_source_used": 44,
+      "n_target_used": 119
+    },
+    "global_pad_rank": 123,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 44,
+      "pad_target_n": 44
+    },
+    "buildable_pad_rank": 107,
+    "selection_order": 15,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-7",
+    "target_entity": "G-1",
+    "same_entity": false,
+    "source_machine": "G-7",
+    "target_machine": "G-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-7__to__G-1",
+    "train_normal_count": 37,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 14,
+    "val_normal_count": 12,
+    "val_anomaly_count": 2,
+    "test_count": 56,
+    "test_normal_count": 54,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 48,
+      "pool_end": 61,
+      "val_start": 61,
+      "val_end": 75,
+      "test_start": 75,
+      "test_end": 131
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.949859619140625,
+        "feature_std_l2": 21.747478485107422,
+        "n_source_used": 37,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 24.19871711730957,
+        "feature_std_l2": 38.670379638671875,
+        "n_source_used": 37,
+        "n_target_used": 14
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.79908561706543,
+        "feature_std_l2": 29.333742141723633,
+        "n_source_used": 37,
+        "n_target_used": 56
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 6.9849677085876465,
+      "n_source_used": 37,
+      "n_target_used": 37
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 20.018230438232422,
+      "feature_std_l2": 30.422378540039062,
+      "n_source_used": 37,
+      "n_target_used": 127
+    },
+    "global_pad_rank": 124,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 37,
+      "pad_target_n": 37
+    },
+    "buildable_pad_rank": 108,
+    "selection_order": 16,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-7",
+    "target_entity": "G-2",
+    "same_entity": false,
+    "source_machine": "G-7",
+    "target_machine": "G-2",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-7__to__G-2",
+    "train_normal_count": 37,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 11,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 12,
+    "val_anomaly_count": 1,
+    "test_count": 52,
+    "test_normal_count": 50,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 38,
+      "pool_end": 49,
+      "val_start": 49,
+      "val_end": 62,
+      "test_start": 62,
+      "test_end": 114
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.36591339111328,
+        "feature_std_l2": 15.942713737487793,
+        "n_source_used": 37,
+        "n_target_used": 11
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 22.818113327026367,
+        "feature_std_l2": 30.9775390625,
+        "n_source_used": 37,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 7722297.0,
+        "feature_std_l2": 38611436.0,
+        "n_source_used": 37,
+        "n_target_used": 52
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 5.815580368041992,
+      "n_source_used": 37,
+      "n_target_used": 37
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 3263486.5,
+      "feature_std_l2": 21071844.0,
+      "n_source_used": 37,
+      "n_target_used": 111
+    },
+    "global_pad_rank": 125,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 37,
+      "pad_target_n": 37
+    },
+    "buildable_pad_rank": 109,
+    "selection_order": 17,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-7",
+    "target_entity": "G-3",
+    "same_entity": false,
+    "source_machine": "G-7",
+    "target_machine": "G-3",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-7__to__G-3",
+    "train_normal_count": 37,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 14,
+    "val_normal_count": 12,
+    "val_anomaly_count": 2,
+    "test_count": 56,
+    "test_normal_count": 55,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 40,
+      "pool_end": 52,
+      "val_start": 52,
+      "val_end": 66,
+      "test_start": 66,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 16731644.0,
+        "feature_std_l2": 37413100.0,
+        "n_source_used": 37,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 17.940584182739258,
+        "feature_std_l2": 18.825044631958008,
+        "n_source_used": 37,
+        "n_target_used": 14
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 8028435.0,
+        "feature_std_l2": 31908210.0,
+        "n_source_used": 37,
+        "n_target_used": 56
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 5.627923965454102,
+      "n_source_used": 37,
+      "n_target_used": 37
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 7556174.0,
+      "feature_std_l2": 31013080.0,
+      "n_source_used": 37,
+      "n_target_used": 119
+    },
+    "global_pad_rank": 126,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 37,
+      "pad_target_n": 37
+    },
+    "buildable_pad_rank": 110,
+    "selection_order": 18,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "P-7",
+    "target_entity": "P-4",
+    "same_entity": false,
+    "source_machine": "P-7",
+    "target_machine": "P-4",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\P-7__to__P-4",
+    "train_normal_count": 43,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 21,
+    "val_normal_count": 16,
+    "val_anomaly_count": 5,
+    "test_count": 87,
+    "test_normal_count": 79,
+    "test_anomaly_count": 8,
+    "indices": {
+      "pool_start": 0,
+      "pool_end": 12,
+      "val_start": 12,
+      "val_end": 33,
+      "test_start": 33,
+      "test_end": 120
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 15.054559707641602,
+        "feature_std_l2": 23.211360931396484,
+        "n_source_used": 43,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19488934.0,
+        "feature_std_l2": 60068940.0,
+        "n_source_used": 43,
+        "n_target_used": 21
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 13945604.0,
+        "feature_std_l2": 51271792.0,
+        "n_source_used": 43,
+        "n_target_used": 87
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 4.415225982666016,
+      "n_source_used": 43,
+      "n_target_used": 43
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 5.895895004272461,
+      "feature_std_l2": 16.455982208251953,
+      "n_source_used": 43,
+      "n_target_used": 107
+    },
+    "global_pad_rank": 137,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 43,
+      "pad_target_n": 43
+    },
+    "buildable_pad_rank": 120,
+    "selection_order": 19,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "T-1",
+    "target_entity": "T-3",
+    "same_entity": false,
+    "source_machine": "T-1",
+    "target_machine": "T-3",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\T-1__to__T-3",
+    "train_normal_count": 43,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 24,
+    "val_normal_count": 20,
+    "val_anomaly_count": 4,
+    "test_count": 96,
+    "test_normal_count": 93,
+    "test_anomaly_count": 3,
+    "indices": {
+      "pool_start": 0,
+      "pool_end": 13,
+      "val_start": 13,
+      "val_end": 37,
+      "test_start": 37,
+      "test_end": 133
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 24.35909652709961,
+        "feature_std_l2": 29.94389533996582,
+        "n_source_used": 43,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 9.350757598876953,
+        "feature_std_l2": 36.77340316772461,
+        "n_source_used": 43,
+        "n_target_used": 24
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 2.345837354660034,
+        "feature_std_l2": 21.379606246948242,
+        "n_source_used": 43,
+        "n_target_used": 96
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 1.0908364057540894,
+      "n_source_used": 43,
+      "n_target_used": 43
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 2.8850505352020264,
+      "feature_std_l2": 13.627578735351562,
+      "n_source_used": 43,
+      "n_target_used": 126
+    },
+    "global_pad_rank": 138,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 43,
+      "pad_target_n": 43
+    },
+    "buildable_pad_rank": 121,
+    "selection_order": 20,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "T-2",
+    "target_entity": "T-3",
+    "same_entity": false,
+    "source_machine": "T-2",
+    "target_machine": "T-3",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\T-2__to__T-3",
+    "train_normal_count": 43,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 24,
+    "val_normal_count": 20,
+    "val_anomaly_count": 4,
+    "test_count": 96,
+    "test_normal_count": 93,
+    "test_anomaly_count": 3,
+    "indices": {
+      "pool_start": 0,
+      "pool_end": 13,
+      "val_start": 13,
+      "val_end": 37,
+      "test_start": 37,
+      "test_end": 133
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.892518997192383,
+        "feature_std_l2": 19.711076736450195,
+        "n_source_used": 43,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 11.904781341552734,
+        "feature_std_l2": 41.83563232421875,
+        "n_source_used": 43,
+        "n_target_used": 24
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 7.750200271606445,
+        "feature_std_l2": 29.23588752746582,
+        "n_source_used": 43,
+        "n_target_used": 96
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 2.0,
+      "domain_acc": 1.0,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 0.9894904494285583,
+      "n_source_used": 43,
+      "n_target_used": 43
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 5.739753723144531,
+      "feature_std_l2": 15.105393409729004,
+      "n_source_used": 43,
+      "n_target_used": 126
+    },
+    "global_pad_rank": 140,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 2.0,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 1.0,
+      "pad_source_n": 43,
+      "pad_target_n": 43
+    },
+    "buildable_pad_rank": 123,
+    "selection_order": 21,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "F-3",
+    "target_entity": "F-1",
+    "same_entity": false,
+    "source_machine": "F-3",
+    "target_machine": "F-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\F-3__to__F-1",
+    "train_normal_count": 44,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 12,
+    "val_normal_count": 10,
+    "val_anomaly_count": 2,
+    "test_count": 48,
+    "test_normal_count": 47,
+    "test_anomaly_count": 1,
+    "indices": {
+      "pool_start": 60,
+      "pool_end": 73,
+      "val_start": 73,
+      "val_end": 85,
+      "test_start": 85,
+      "test_end": 133
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.507192611694336,
+        "feature_std_l2": 25.687644958496094,
+        "n_source_used": 44,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.517723083496094,
+        "feature_std_l2": 25.67000961303711,
+        "n_source_used": 44,
+        "n_target_used": 12
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.473215103149414,
+        "feature_std_l2": 25.67618179321289,
+        "n_source_used": 44,
+        "n_target_used": 48
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.8518518518518516,
+      "domain_acc": 0.9629629629629629,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 5.5384297370910645,
+      "n_source_used": 44,
+      "n_target_used": 44
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 16.798646926879883,
+      "feature_std_l2": 24.03130531311035,
+      "n_source_used": 44,
+      "n_target_used": 130
+    },
+    "global_pad_rank": 155,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.8518518518518516,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 0.9629629629629629,
+      "pad_source_n": 44,
+      "pad_target_n": 44
+    },
+    "buildable_pad_rank": 139,
+    "selection_order": 22,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-6",
+    "target_entity": "G-1",
+    "same_entity": false,
+    "source_machine": "G-6",
+    "target_machine": "G-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-6__to__G-1",
+    "train_normal_count": 44,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 14,
+    "val_normal_count": 12,
+    "val_anomaly_count": 2,
+    "test_count": 56,
+    "test_normal_count": 54,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 48,
+      "pool_end": 61,
+      "val_start": 61,
+      "val_end": 75,
+      "test_start": 75,
+      "test_end": 131
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 12.690921783447266,
+        "feature_std_l2": 24.021289825439453,
+        "n_source_used": 44,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.736759185791016,
+        "feature_std_l2": 40.244632720947266,
+        "n_source_used": 44,
+        "n_target_used": 14
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 13.629094123840332,
+        "feature_std_l2": 32.787696838378906,
+        "n_source_used": 44,
+        "n_target_used": 56
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.8518518518518516,
+      "domain_acc": 0.9629629629629629,
+      "domain_auc": 0.9450549450549451,
+      "feature_mean_l2": 3.748892068862915,
+      "n_source_used": 44,
+      "n_target_used": 44
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 0.9807692307692307,
+      "feature_mean_l2": 13.431502342224121,
+      "feature_std_l2": 33.23408126831055,
+      "n_source_used": 44,
+      "n_target_used": 127
+    },
+    "global_pad_rank": 157,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.8518518518518516,
+      "pad_domain_auc": 0.9450549450549451,
+      "pad_domain_acc": 0.9629629629629629,
+      "pad_source_n": 44,
+      "pad_target_n": 44
+    },
+    "buildable_pad_rank": 140,
+    "selection_order": 23,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-7",
+    "target_entity": "A-2",
+    "same_entity": false,
+    "source_machine": "A-7",
+    "target_machine": "A-2",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-7__to__A-2",
+    "train_normal_count": 43,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 12,
+    "val_normal_count": 10,
+    "val_anomaly_count": 2,
+    "test_count": 52,
+    "test_normal_count": 50,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 58,
+      "val_start": 58,
+      "val_end": 70,
+      "test_start": 70,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 13.565035820007324,
+        "feature_std_l2": 21.857030868530273,
+        "n_source_used": 43,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 21.489822387695312,
+        "feature_std_l2": 41.92854690551758,
+        "n_source_used": 43,
+        "n_target_used": 12
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 14.807046890258789,
+        "feature_std_l2": 31.211746215820312,
+        "n_source_used": 43,
+        "n_target_used": 52
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.8461538461538463,
+      "domain_acc": 0.9615384615384616,
+      "domain_auc": 0.9940828402366865,
+      "feature_mean_l2": 4.974524974822998,
+      "n_source_used": 43,
+      "n_target_used": 43
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 15.302217483520508,
+      "feature_std_l2": 32.97835159301758,
+      "n_source_used": 43,
+      "n_target_used": 118
+    },
+    "global_pad_rank": 159,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.8461538461538463,
+      "pad_domain_auc": 0.9940828402366865,
+      "pad_domain_acc": 0.9615384615384616,
+      "pad_source_n": 43,
+      "pad_target_n": 43
+    },
+    "buildable_pad_rank": 142,
+    "selection_order": 24,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-7",
+    "target_entity": "A-3",
+    "same_entity": false,
+    "source_machine": "A-7",
+    "target_machine": "A-3",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-7__to__A-3",
+    "train_normal_count": 43,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 10,
+    "val_anomaly_count": 3,
+    "test_count": 54,
+    "test_normal_count": 52,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 48,
+      "pool_end": 60,
+      "val_start": 60,
+      "val_end": 73,
+      "test_start": 73,
+      "test_end": 127
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 13.461993217468262,
+        "feature_std_l2": 21.769426345825195,
+        "n_source_used": 43,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.364200592041016,
+        "feature_std_l2": 36.88637924194336,
+        "n_source_used": 43,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 14.636401176452637,
+        "feature_std_l2": 28.737546920776367,
+        "n_source_used": 43,
+        "n_target_used": 54
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.8461538461538463,
+      "domain_acc": 0.9615384615384616,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 4.80631160736084,
+      "n_source_used": 43,
+      "n_target_used": 43
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 14.614643096923828,
+      "feature_std_l2": 29.257766723632812,
+      "n_source_used": 43,
+      "n_target_used": 122
+    },
+    "global_pad_rank": 160,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.8461538461538463,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 0.9615384615384616,
+      "pad_source_n": 43,
+      "pad_target_n": 43
+    },
+    "buildable_pad_rank": 143,
+    "selection_order": 25,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-1",
+    "target_entity": "G-7",
+    "same_entity": false,
+    "source_machine": "G-1",
+    "target_machine": "G-7",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-1__to__G-7",
+    "train_normal_count": 43,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 16,
+    "val_normal_count": 13,
+    "val_anomaly_count": 3,
+    "test_count": 64,
+    "test_normal_count": 58,
+    "test_anomaly_count": 6,
+    "indices": {
+      "pool_start": 32,
+      "pool_end": 44,
+      "val_start": 44,
+      "val_end": 60,
+      "test_start": 60,
+      "test_end": 124
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.619142532348633,
+        "feature_std_l2": 27.248321533203125,
+        "n_source_used": 43,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.667869567871094,
+        "feature_std_l2": 27.25981330871582,
+        "n_source_used": 43,
+        "n_target_used": 16
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.69564437866211,
+        "feature_std_l2": 27.280641555786133,
+        "n_source_used": 43,
+        "n_target_used": 64
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.8461538461538463,
+      "domain_acc": 0.9615384615384616,
+      "domain_auc": 0.9230769230769231,
+      "feature_mean_l2": 6.4211506843566895,
+      "n_source_used": 43,
+      "n_target_used": 43
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 19424310.0,
+      "feature_std_l2": 74059352.0,
+      "n_source_used": 43,
+      "n_target_used": 115
+    },
+    "global_pad_rank": 170,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.8461538461538463,
+      "pad_domain_auc": 0.9230769230769231,
+      "pad_domain_acc": 0.9615384615384616,
+      "pad_source_n": 43,
+      "pad_target_n": 43
+    },
+    "buildable_pad_rank": 154,
+    "selection_order": 26,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-3",
+    "target_entity": "G-7",
+    "same_entity": false,
+    "source_machine": "G-3",
+    "target_machine": "G-7",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-3__to__G-7",
+    "train_normal_count": 40,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 16,
+    "val_normal_count": 13,
+    "val_anomaly_count": 3,
+    "test_count": 64,
+    "test_normal_count": 58,
+    "test_anomaly_count": 6,
+    "indices": {
+      "pool_start": 32,
+      "pool_end": 44,
+      "val_start": 44,
+      "val_end": 60,
+      "test_start": 60,
+      "test_end": 124
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.132545471191406,
+        "feature_std_l2": 26.903335571289062,
+        "n_source_used": 40,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.202951431274414,
+        "feature_std_l2": 26.8999080657959,
+        "n_source_used": 40,
+        "n_target_used": 16
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.231746673583984,
+        "feature_std_l2": 26.900360107421875,
+        "n_source_used": 40,
+        "n_target_used": 64
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.8333333333333335,
+      "domain_acc": 0.9583333333333334,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 5.9309797286987305,
+      "n_source_used": 40,
+      "n_target_used": 40
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 19424310.0,
+      "feature_std_l2": 74059352.0,
+      "n_source_used": 40,
+      "n_target_used": 115
+    },
+    "global_pad_rank": 182,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.8333333333333335,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 0.9583333333333334,
+      "pad_source_n": 40,
+      "pad_target_n": 40
+    },
+    "buildable_pad_rank": 167,
+    "selection_order": 27,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-4",
+    "target_entity": "G-1",
+    "same_entity": false,
+    "source_machine": "G-4",
+    "target_machine": "G-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-4__to__G-1",
+    "train_normal_count": 38,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 13,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 14,
+    "val_normal_count": 12,
+    "val_anomaly_count": 2,
+    "test_count": 56,
+    "test_normal_count": 54,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 48,
+      "pool_end": 61,
+      "val_start": 61,
+      "val_end": 75,
+      "test_start": 75,
+      "test_end": 131
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 13.763357162475586,
+        "feature_std_l2": 18.82120704650879,
+        "n_source_used": 38,
+        "n_target_used": 13
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.539173126220703,
+        "feature_std_l2": 37.388248443603516,
+        "n_source_used": 38,
+        "n_target_used": 14
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 14.690628051757812,
+        "feature_std_l2": 29.26110076904297,
+        "n_source_used": 38,
+        "n_target_used": 56
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.8260869565217392,
+      "domain_acc": 0.9565217391304348,
+      "domain_auc": 0.9469696969696969,
+      "feature_mean_l2": 3.84289813041687,
+      "n_source_used": 38,
+      "n_target_used": 38
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 14.531564712524414,
+      "feature_std_l2": 29.801246643066406,
+      "n_source_used": 38,
+      "n_target_used": 127
+    },
+    "global_pad_rank": 185,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.8260869565217392,
+      "pad_domain_auc": 0.9469696969696969,
+      "pad_domain_acc": 0.9565217391304348,
+      "pad_source_n": 38,
+      "pad_target_n": 38
+    },
+    "buildable_pad_rank": 170,
+    "selection_order": 28,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "G-2",
+    "target_entity": "G-7",
+    "same_entity": false,
+    "source_machine": "G-2",
+    "target_machine": "G-7",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\G-2__to__G-7",
+    "train_normal_count": 37,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 16,
+    "val_normal_count": 13,
+    "val_anomaly_count": 3,
+    "test_count": 64,
+    "test_normal_count": 58,
+    "test_anomaly_count": 6,
+    "indices": {
+      "pool_start": 32,
+      "pool_end": 44,
+      "val_start": 44,
+      "val_end": 60,
+      "test_start": 60,
+      "test_end": 124
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.10982894897461,
+        "feature_std_l2": 22.177532196044922,
+        "n_source_used": 37,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.216773986816406,
+        "feature_std_l2": 22.207120895385742,
+        "n_source_used": 37,
+        "n_target_used": 16
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.256881713867188,
+        "feature_std_l2": 22.233470916748047,
+        "n_source_used": 37,
+        "n_target_used": 64
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.652173913043478,
+      "domain_acc": 0.9130434782608695,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 5.040082931518555,
+      "n_source_used": 37,
+      "n_target_used": 37
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 19424310.0,
+      "feature_std_l2": 74059352.0,
+      "n_source_used": 37,
+      "n_target_used": 115
+    },
+    "global_pad_rank": 215,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.652173913043478,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 0.9130434782608695,
+      "pad_source_n": 37,
+      "pad_target_n": 37
+    },
+    "buildable_pad_rank": 199,
+    "selection_order": 29,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-8",
+    "target_entity": "A-2",
+    "same_entity": false,
+    "source_machine": "A-8",
+    "target_machine": "A-2",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-8__to__A-2",
+    "train_normal_count": 10,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 12,
+    "val_normal_count": 10,
+    "val_anomaly_count": 2,
+    "test_count": 52,
+    "test_normal_count": 50,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 46,
+      "pool_end": 58,
+      "val_start": 58,
+      "val_end": 70,
+      "test_start": 70,
+      "test_end": 122
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.048847198486328,
+        "feature_std_l2": 30.75332260131836,
+        "n_source_used": 10,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 24.564802169799805,
+        "feature_std_l2": 47.179115295410156,
+        "n_source_used": 10,
+        "n_target_used": 12
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.923460006713867,
+        "feature_std_l2": 37.994178771972656,
+        "n_source_used": 10,
+        "n_target_used": 52
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.3333333333333335,
+      "domain_acc": 0.8333333333333334,
+      "domain_auc": 0.888888888888889,
+      "feature_mean_l2": 3.5937352180480957,
+      "n_source_used": 10,
+      "n_target_used": 10
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 19.27220916748047,
+      "feature_std_l2": 39.45704650878906,
+      "n_source_used": 10,
+      "n_target_used": 118
+    },
+    "global_pad_rank": 248,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.3333333333333335,
+      "pad_domain_auc": 0.888888888888889,
+      "pad_domain_acc": 0.8333333333333334,
+      "pad_source_n": 10,
+      "pad_target_n": 10
+    },
+    "buildable_pad_rank": 230,
+    "selection_order": 30,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-8",
+    "target_entity": "A-3",
+    "same_entity": false,
+    "source_machine": "A-8",
+    "target_machine": "A-3",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-8__to__A-3",
+    "train_normal_count": 10,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 10,
+    "val_anomaly_count": 3,
+    "test_count": 54,
+    "test_normal_count": 52,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 48,
+      "pool_end": 60,
+      "val_start": 60,
+      "val_end": 73,
+      "test_start": 73,
+      "test_end": 127
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 17.791257858276367,
+        "feature_std_l2": 30.699798583984375,
+        "n_source_used": 10,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 22.65932273864746,
+        "feature_std_l2": 42.758705139160156,
+        "n_source_used": 10,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.6999454498291,
+        "feature_std_l2": 35.973175048828125,
+        "n_source_used": 10,
+        "n_target_used": 54
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.3333333333333335,
+      "domain_acc": 0.8333333333333334,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 3.0680015087127686,
+      "n_source_used": 10,
+      "n_target_used": 10
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 18.62076759338379,
+      "feature_std_l2": 36.545257568359375,
+      "n_source_used": 10,
+      "n_target_used": 122
+    },
+    "global_pad_rank": 249,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.3333333333333335,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 0.8333333333333334,
+      "pad_source_n": 10,
+      "pad_target_n": 10
+    },
+    "buildable_pad_rank": 231,
+    "selection_order": 31,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "auto",
+    "source_entity": "A-9",
+    "target_entity": "A-3",
+    "same_entity": false,
+    "source_machine": "A-9",
+    "target_machine": "A-3",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smap_experiments\\smap_same_prefix_buildability_auto_20260801\\cross_entity_auto\\A-9__to__A-3",
+    "train_normal_count": 10,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 12,
+    "target_pool_hidden_anomaly_count": 0,
+    "target_pool_hidden_anomaly_ratio": 0.0,
+    "val_count": 13,
+    "val_normal_count": 10,
+    "val_anomaly_count": 3,
+    "test_count": 54,
+    "test_normal_count": 52,
+    "test_anomaly_count": 2,
+    "indices": {
+      "pool_start": 48,
+      "pool_end": 60,
+      "val_start": 60,
+      "val_end": 73,
+      "test_start": 73,
+      "test_end": 127
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 17.788536071777344,
+        "feature_std_l2": 30.699804306030273,
+        "n_source_used": 10,
+        "n_target_used": 12
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 22.657310485839844,
+        "feature_std_l2": 42.75888442993164,
+        "n_source_used": 10,
+        "n_target_used": 13
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.701858520507812,
+        "feature_std_l2": 35.973121643066406,
+        "n_source_used": 10,
+        "n_target_used": 54
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "same_prefix_only": true,
+    "ts_jepa_pad": {
+      "pad_value": 1.3333333333333335,
+      "domain_acc": 0.8333333333333334,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 3.4221031665802,
+      "n_source_used": 10,
+      "n_target_used": 10
+    },
+    "summary_baseline_rank": {
+      "domain_auc": 1.0,
+      "domain_acc": 1.0,
+      "feature_mean_l2": 18.619110107421875,
+      "feature_std_l2": 36.54523849487305,
+      "n_source_used": 10,
+      "n_target_used": 122
+    },
+    "global_pad_rank": 251,
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.3333333333333335,
+      "pad_domain_auc": 1.0,
+      "pad_domain_acc": 0.8333333333333334,
+      "pad_source_n": 10,
+      "pad_target_n": 10
+    },
+    "buildable_pad_rank": 233,
+    "selection_order": 32,
+    "selected_shift_level": "auto",
+    "smap_explainable_paper_safe_rule": {
+      "profile": "balanced",
+      "rule_text": "source-vs-pool feature-mean L2 >= 12, val_count >= 12, val_anomaly_ratio <= 0.2500; keep at most 3 pair(s) per target, ordered by buildable PAD rank",
+      "filters": [
+        [
+          "pool_feature_mean_l2",
+          ">=",
+          12
+        ],
+        [
+          "val_count",
+          ">=",
+          12
+        ],
+        [
+          "val_anomaly_ratio",
+          "<=",
+          0.25
+        ]
+      ],
+      "cap_kind": "target_entity",
+      "cap_value": 3,
+      "stats": {
+        "selected_count": 32,
+        "tp": 17,
+        "fp": 15,
+        "precision": 0.53125,
+        "recall_over_good": 0.25,
+        "f1": 0.34,
+        "mean_delta_combined_minus_source_auroc": 0.24184779612041585,
+        "mean_delta_nas_minus_fixed_auroc": 0.1287625272909961
+      }
+    }
+  }
+]
