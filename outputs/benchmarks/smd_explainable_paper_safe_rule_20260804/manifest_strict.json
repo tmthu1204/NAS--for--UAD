@@ -1,0 +1,716 @@
+[
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "hard",
+    "source_entity": "machine-2-4",
+    "target_entity": "machine-2-7",
+    "same_entity": false,
+    "source_machine": "machine-2-4",
+    "target_machine": "machine-2-7",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smd_experiments\\cross_entity_all_pad_prefhard\\rank_38__machine-2-4__to__machine-2-7__hard",
+    "train_normal_count": 369,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 73,
+    "target_pool_hidden_anomaly_count": 6,
+    "target_pool_hidden_anomaly_ratio": 0.0821917808219178,
+    "val_count": 50,
+    "val_normal_count": 44,
+    "val_anomaly_count": 6,
+    "test_count": 117,
+    "test_normal_count": 99,
+    "test_anomaly_count": 18,
+    "indices": {
+      "pool_start": 129,
+      "pool_end": 202,
+      "val_start": 202,
+      "val_end": 252,
+      "test_start": 252,
+      "test_end": 369
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 8.862422943115234,
+        "feature_std_l2": 9.324501037597656,
+        "n_source_used": 369,
+        "n_target_used": 73
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 9.094369888305664,
+        "feature_std_l2": 12.193599700927734,
+        "n_source_used": 369,
+        "n_target_used": 50
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 1728238.25,
+        "feature_std_l2": 13105032.0,
+        "n_source_used": 369,
+        "n_target_used": 117
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.9794871794871796,
+      "domain_acc": 0.9948717948717949,
+      "domain_auc": 1.0,
+      "feature_mean_l2": 4.179660797119141,
+      "n_source_used": 325,
+      "n_target_used": 325
+    },
+    "ranking_rule": "smd_moderate_proxy_paper_safe",
+    "ranking_source": "D:\\Papers\\NAS--for--UAD\\outputs\\benchmarks\\jepa_pad_smd_cross_entity_all\\pilot_rankings.json",
+    "global_pad_rank": 38,
+    "selected_shift_level": "hard",
+    "selection_order": 1,
+    "smd_paper_safe_rule": {
+      "profile": "strict",
+      "rule_name": "smd_moderate_proxy_paper_safe",
+      "rule_text": "buildable cross-entity SMD pair; 38 <= global_pad_rank <= 80; precheck_feature_mean_l2 <= 4.9334; pool_feature_mean_l2 <= 14.0352; val_count <= 50",
+      "thresholds": {
+        "global_pad_rank_min": 38,
+        "global_pad_rank_max": 80,
+        "precheck_feature_mean_l2_max": 4.9333655834198,
+        "pool_feature_mean_l2_max": 14.035164594650269,
+        "val_count_max": 50,
+        "quantiles": {
+          "global_pad_rank_min": "ceil(Q30(global_pad_rank | audited buildable SMD pairs))",
+          "global_pad_rank_max": "floor(Q70(global_pad_rank | audited buildable SMD pairs))",
+          "precheck_feature_mean_l2_max": "Q30(precheck_feature_mean_l2 | audited buildable SMD pairs)",
+          "pool_feature_mean_l2_max": "Q75(pool_feature_mean_l2 | audited buildable SMD pairs)",
+          "val_count_max": "floor(Q75(val_count | audited buildable SMD pairs))"
+        }
+      },
+      "audit_stats": {
+        "selected_count": 7,
+        "tp": 7,
+        "fp": 0,
+        "total_good": 32,
+        "precision": 1.0,
+        "recall_over_good": 0.21875,
+        "f1": 0.358974358974359,
+        "mean_delta_combined_minus_source_auroc": 0.14376894597223205,
+        "mean_delta_nas_minus_fixed_auroc": 0.09000809510493388
+      },
+      "notes": "Selection uses only build-time proxy quantities: TS-JEPA/PAD rank, precheck domain AUC, and feature-mean L2. Benchmark outcomes are used only to audit the frozen selected set."
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "hard",
+    "source_entity": "machine-1-4",
+    "target_entity": "machine-2-4",
+    "same_entity": false,
+    "source_machine": "machine-1-4",
+    "target_machine": "machine-2-4",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smd_experiments\\cross_entity_all_pad_prefhard\\rank_46__machine-1-4__to__machine-2-4__hard",
+    "train_normal_count": 369,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 73,
+    "target_pool_hidden_anomaly_count": 7,
+    "target_pool_hidden_anomaly_ratio": 0.0958904109589041,
+    "val_count": 34,
+    "val_normal_count": 22,
+    "val_anomaly_count": 12,
+    "test_count": 81,
+    "test_normal_count": 62,
+    "test_anomaly_count": 19,
+    "indices": {
+      "pool_start": 181,
+      "pool_end": 254,
+      "val_start": 254,
+      "val_end": 288,
+      "test_start": 288,
+      "test_end": 369
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 9.718342781066895,
+        "feature_std_l2": 19.44098663330078,
+        "n_source_used": 369,
+        "n_target_used": 73
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 11.924125671386719,
+        "feature_std_l2": 19.41847801208496,
+        "n_source_used": 369,
+        "n_target_used": 34
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.700307846069336,
+        "feature_std_l2": 39.48691940307617,
+        "n_source_used": 369,
+        "n_target_used": 81
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.9781420765027322,
+      "domain_acc": 0.994535519125683,
+      "domain_auc": 0.9998805542283804,
+      "feature_mean_l2": 4.55045223236084,
+      "n_source_used": 304,
+      "n_target_used": 304
+    },
+    "ranking_rule": "smd_moderate_proxy_paper_safe",
+    "ranking_source": "D:\\Papers\\NAS--for--UAD\\outputs\\benchmarks\\jepa_pad_smd_cross_entity_all\\pilot_rankings.json",
+    "global_pad_rank": 46,
+    "selected_shift_level": "hard",
+    "selection_order": 2,
+    "smd_paper_safe_rule": {
+      "profile": "strict",
+      "rule_name": "smd_moderate_proxy_paper_safe",
+      "rule_text": "buildable cross-entity SMD pair; 38 <= global_pad_rank <= 80; precheck_feature_mean_l2 <= 4.9334; pool_feature_mean_l2 <= 14.0352; val_count <= 50",
+      "thresholds": {
+        "global_pad_rank_min": 38,
+        "global_pad_rank_max": 80,
+        "precheck_feature_mean_l2_max": 4.9333655834198,
+        "pool_feature_mean_l2_max": 14.035164594650269,
+        "val_count_max": 50,
+        "quantiles": {
+          "global_pad_rank_min": "ceil(Q30(global_pad_rank | audited buildable SMD pairs))",
+          "global_pad_rank_max": "floor(Q70(global_pad_rank | audited buildable SMD pairs))",
+          "precheck_feature_mean_l2_max": "Q30(precheck_feature_mean_l2 | audited buildable SMD pairs)",
+          "pool_feature_mean_l2_max": "Q75(pool_feature_mean_l2 | audited buildable SMD pairs)",
+          "val_count_max": "floor(Q75(val_count | audited buildable SMD pairs))"
+        }
+      },
+      "audit_stats": {
+        "selected_count": 7,
+        "tp": 7,
+        "fp": 0,
+        "total_good": 32,
+        "precision": 1.0,
+        "recall_over_good": 0.21875,
+        "f1": 0.358974358974359,
+        "mean_delta_combined_minus_source_auroc": 0.14376894597223205,
+        "mean_delta_nas_minus_fixed_auroc": 0.09000809510493388
+      },
+      "notes": "Selection uses only build-time proxy quantities: TS-JEPA/PAD rank, precheck domain AUC, and feature-mean L2. Benchmark outcomes are used only to audit the frozen selected set."
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "hard",
+    "source_entity": "machine-3-10",
+    "target_entity": "machine-1-7",
+    "same_entity": false,
+    "source_machine": "machine-3-10",
+    "target_machine": "machine-1-7",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smd_experiments\\cross_entity_all_pad_prefhard\\rank_47__machine-3-10__to__machine-1-7__hard",
+    "train_normal_count": 369,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 73,
+    "target_pool_hidden_anomaly_count": 2,
+    "target_pool_hidden_anomaly_ratio": 0.0273972602739726,
+    "val_count": 47,
+    "val_normal_count": 40,
+    "val_anomaly_count": 7,
+    "test_count": 112,
+    "test_normal_count": 104,
+    "test_anomaly_count": 8,
+    "indices": {
+      "pool_start": 137,
+      "pool_end": 210,
+      "val_start": 210,
+      "val_end": 257,
+      "test_start": 257,
+      "test_end": 369
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 7.9338274002075195,
+        "feature_std_l2": 21.109878540039062,
+        "n_source_used": 369,
+        "n_target_used": 73
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 8.078614234924316,
+        "feature_std_l2": 18.619033813476562,
+        "n_source_used": 369,
+        "n_target_used": 47
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 8.247140884399414,
+        "feature_std_l2": 27.024003982543945,
+        "n_source_used": 369,
+        "n_target_used": 112
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.9781420765027322,
+      "domain_acc": 0.994535519125683,
+      "domain_auc": 0.9998805542283804,
+      "feature_mean_l2": 4.225987434387207,
+      "n_source_used": 305,
+      "n_target_used": 305
+    },
+    "ranking_rule": "smd_moderate_proxy_paper_safe",
+    "ranking_source": "D:\\Papers\\NAS--for--UAD\\outputs\\benchmarks\\jepa_pad_smd_cross_entity_all\\pilot_rankings.json",
+    "global_pad_rank": 47,
+    "selected_shift_level": "hard",
+    "selection_order": 3,
+    "smd_paper_safe_rule": {
+      "profile": "strict",
+      "rule_name": "smd_moderate_proxy_paper_safe",
+      "rule_text": "buildable cross-entity SMD pair; 38 <= global_pad_rank <= 80; precheck_feature_mean_l2 <= 4.9334; pool_feature_mean_l2 <= 14.0352; val_count <= 50",
+      "thresholds": {
+        "global_pad_rank_min": 38,
+        "global_pad_rank_max": 80,
+        "precheck_feature_mean_l2_max": 4.9333655834198,
+        "pool_feature_mean_l2_max": 14.035164594650269,
+        "val_count_max": 50,
+        "quantiles": {
+          "global_pad_rank_min": "ceil(Q30(global_pad_rank | audited buildable SMD pairs))",
+          "global_pad_rank_max": "floor(Q70(global_pad_rank | audited buildable SMD pairs))",
+          "precheck_feature_mean_l2_max": "Q30(precheck_feature_mean_l2 | audited buildable SMD pairs)",
+          "pool_feature_mean_l2_max": "Q75(pool_feature_mean_l2 | audited buildable SMD pairs)",
+          "val_count_max": "floor(Q75(val_count | audited buildable SMD pairs))"
+        }
+      },
+      "audit_stats": {
+        "selected_count": 7,
+        "tp": 7,
+        "fp": 0,
+        "total_good": 32,
+        "precision": 1.0,
+        "recall_over_good": 0.21875,
+        "f1": 0.358974358974359,
+        "mean_delta_combined_minus_source_auroc": 0.14376894597223205,
+        "mean_delta_nas_minus_fixed_auroc": 0.09000809510493388
+      },
+      "notes": "Selection uses only build-time proxy quantities: TS-JEPA/PAD rank, precheck domain AUC, and feature-mean L2. Benchmark outcomes are used only to audit the frozen selected set."
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "hard",
+    "source_entity": "machine-1-3",
+    "target_entity": "machine-2-4",
+    "same_entity": false,
+    "source_machine": "machine-1-3",
+    "target_machine": "machine-2-4",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smd_experiments\\cross_entity_all_pad_prefhard\\rank_61__machine-1-3__to__machine-2-4__hard",
+    "train_normal_count": 369,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 73,
+    "target_pool_hidden_anomaly_count": 7,
+    "target_pool_hidden_anomaly_ratio": 0.0958904109589041,
+    "val_count": 34,
+    "val_normal_count": 22,
+    "val_anomaly_count": 12,
+    "test_count": 81,
+    "test_normal_count": 62,
+    "test_anomaly_count": 19,
+    "indices": {
+      "pool_start": 181,
+      "pool_end": 254,
+      "val_start": 254,
+      "val_end": 288,
+      "test_start": 288,
+      "test_end": 369
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 9.838971138000488,
+        "feature_std_l2": 19.4257869720459,
+        "n_source_used": 369,
+        "n_target_used": 73
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 12.154745101928711,
+        "feature_std_l2": 19.35456657409668,
+        "n_source_used": 369,
+        "n_target_used": 34
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 19.802623748779297,
+        "feature_std_l2": 39.376182556152344,
+        "n_source_used": 369,
+        "n_target_used": 81
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.9562841530054644,
+      "domain_acc": 0.9890710382513661,
+      "domain_auc": 0.9998805542283804,
+      "feature_mean_l2": 4.792999744415283,
+      "n_source_used": 304,
+      "n_target_used": 304
+    },
+    "ranking_rule": "smd_moderate_proxy_paper_safe",
+    "ranking_source": "D:\\Papers\\NAS--for--UAD\\outputs\\benchmarks\\jepa_pad_smd_cross_entity_all\\pilot_rankings.json",
+    "global_pad_rank": 61,
+    "selected_shift_level": "hard",
+    "selection_order": 4,
+    "smd_paper_safe_rule": {
+      "profile": "strict",
+      "rule_name": "smd_moderate_proxy_paper_safe",
+      "rule_text": "buildable cross-entity SMD pair; 38 <= global_pad_rank <= 80; precheck_feature_mean_l2 <= 4.9334; pool_feature_mean_l2 <= 14.0352; val_count <= 50",
+      "thresholds": {
+        "global_pad_rank_min": 38,
+        "global_pad_rank_max": 80,
+        "precheck_feature_mean_l2_max": 4.9333655834198,
+        "pool_feature_mean_l2_max": 14.035164594650269,
+        "val_count_max": 50,
+        "quantiles": {
+          "global_pad_rank_min": "ceil(Q30(global_pad_rank | audited buildable SMD pairs))",
+          "global_pad_rank_max": "floor(Q70(global_pad_rank | audited buildable SMD pairs))",
+          "precheck_feature_mean_l2_max": "Q30(precheck_feature_mean_l2 | audited buildable SMD pairs)",
+          "pool_feature_mean_l2_max": "Q75(pool_feature_mean_l2 | audited buildable SMD pairs)",
+          "val_count_max": "floor(Q75(val_count | audited buildable SMD pairs))"
+        }
+      },
+      "audit_stats": {
+        "selected_count": 7,
+        "tp": 7,
+        "fp": 0,
+        "total_good": 32,
+        "precision": 1.0,
+        "recall_over_good": 0.21875,
+        "f1": 0.358974358974359,
+        "mean_delta_combined_minus_source_auroc": 0.14376894597223205,
+        "mean_delta_nas_minus_fixed_auroc": 0.09000809510493388
+      },
+      "notes": "Selection uses only build-time proxy quantities: TS-JEPA/PAD rank, precheck domain AUC, and feature-mean L2. Benchmark outcomes are used only to audit the frozen selected set."
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "hard",
+    "source_entity": "machine-1-4",
+    "target_entity": "machine-2-1",
+    "same_entity": false,
+    "source_machine": "machine-1-4",
+    "target_machine": "machine-2-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smd_experiments\\cross_entity_all_pad_prefhard\\rank_66__machine-1-4__to__machine-2-1__hard",
+    "train_normal_count": 369,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 73,
+    "target_pool_hidden_anomaly_count": 2,
+    "target_pool_hidden_anomaly_ratio": 0.0273972602739726,
+    "val_count": 36,
+    "val_normal_count": 23,
+    "val_anomaly_count": 13,
+    "test_count": 87,
+    "test_normal_count": 69,
+    "test_anomaly_count": 18,
+    "indices": {
+      "pool_start": 173,
+      "pool_end": 246,
+      "val_start": 246,
+      "val_end": 282,
+      "test_start": 282,
+      "test_end": 369
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 13.669794082641602,
+        "feature_std_l2": 18.475975036621094,
+        "n_source_used": 369,
+        "n_target_used": 73
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 47.493316650390625,
+        "feature_std_l2": 161.62631225585938,
+        "n_source_used": 369,
+        "n_target_used": 36
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 18.787973403930664,
+        "feature_std_l2": 49.786773681640625,
+        "n_source_used": 369,
+        "n_target_used": 87
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.9384615384615387,
+      "domain_acc": 0.9846153846153847,
+      "domain_auc": 0.9966337050284032,
+      "feature_mean_l2": 4.197254180908203,
+      "n_source_used": 325,
+      "n_target_used": 325
+    },
+    "ranking_rule": "smd_moderate_proxy_paper_safe",
+    "ranking_source": "D:\\Papers\\NAS--for--UAD\\outputs\\benchmarks\\jepa_pad_smd_cross_entity_all\\pilot_rankings.json",
+    "global_pad_rank": 66,
+    "selected_shift_level": "hard",
+    "selection_order": 5,
+    "smd_paper_safe_rule": {
+      "profile": "strict",
+      "rule_name": "smd_moderate_proxy_paper_safe",
+      "rule_text": "buildable cross-entity SMD pair; 38 <= global_pad_rank <= 80; precheck_feature_mean_l2 <= 4.9334; pool_feature_mean_l2 <= 14.0352; val_count <= 50",
+      "thresholds": {
+        "global_pad_rank_min": 38,
+        "global_pad_rank_max": 80,
+        "precheck_feature_mean_l2_max": 4.9333655834198,
+        "pool_feature_mean_l2_max": 14.035164594650269,
+        "val_count_max": 50,
+        "quantiles": {
+          "global_pad_rank_min": "ceil(Q30(global_pad_rank | audited buildable SMD pairs))",
+          "global_pad_rank_max": "floor(Q70(global_pad_rank | audited buildable SMD pairs))",
+          "precheck_feature_mean_l2_max": "Q30(precheck_feature_mean_l2 | audited buildable SMD pairs)",
+          "pool_feature_mean_l2_max": "Q75(pool_feature_mean_l2 | audited buildable SMD pairs)",
+          "val_count_max": "floor(Q75(val_count | audited buildable SMD pairs))"
+        }
+      },
+      "audit_stats": {
+        "selected_count": 7,
+        "tp": 7,
+        "fp": 0,
+        "total_good": 32,
+        "precision": 1.0,
+        "recall_over_good": 0.21875,
+        "f1": 0.358974358974359,
+        "mean_delta_combined_minus_source_auroc": 0.14376894597223205,
+        "mean_delta_nas_minus_fixed_auroc": 0.09000809510493388
+      },
+      "notes": "Selection uses only build-time proxy quantities: TS-JEPA/PAD rank, precheck domain AUC, and feature-mean L2. Benchmark outcomes are used only to audit the frozen selected set."
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "hard",
+    "source_entity": "machine-2-7",
+    "target_entity": "machine-2-1",
+    "same_entity": false,
+    "source_machine": "machine-2-7",
+    "target_machine": "machine-2-1",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smd_experiments\\cross_entity_all_pad_prefhard\\rank_67__machine-2-7__to__machine-2-1__hard",
+    "train_normal_count": 369,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 73,
+    "target_pool_hidden_anomaly_count": 2,
+    "target_pool_hidden_anomaly_ratio": 0.0273972602739726,
+    "val_count": 36,
+    "val_normal_count": 23,
+    "val_anomaly_count": 13,
+    "test_count": 87,
+    "test_normal_count": 69,
+    "test_anomaly_count": 18,
+    "indices": {
+      "pool_start": 173,
+      "pool_end": 246,
+      "val_start": 246,
+      "val_end": 282,
+      "test_start": 282,
+      "test_end": 369
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 12.374323844909668,
+        "feature_std_l2": 15.32631778717041,
+        "n_source_used": 369,
+        "n_target_used": 73
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 47.03818130493164,
+        "feature_std_l2": 171.4238739013672,
+        "n_source_used": 369,
+        "n_target_used": 36
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 17.7277889251709,
+        "feature_std_l2": 59.41339874267578,
+        "n_source_used": 369,
+        "n_target_used": 87
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.9384615384615387,
+      "domain_acc": 0.9846153846153847,
+      "domain_auc": 0.9992636229749632,
+      "feature_mean_l2": 4.894814491271973,
+      "n_source_used": 325,
+      "n_target_used": 325
+    },
+    "ranking_rule": "smd_moderate_proxy_paper_safe",
+    "ranking_source": "D:\\Papers\\NAS--for--UAD\\outputs\\benchmarks\\jepa_pad_smd_cross_entity_all\\pilot_rankings.json",
+    "global_pad_rank": 67,
+    "selected_shift_level": "hard",
+    "selection_order": 6,
+    "smd_paper_safe_rule": {
+      "profile": "strict",
+      "rule_name": "smd_moderate_proxy_paper_safe",
+      "rule_text": "buildable cross-entity SMD pair; 38 <= global_pad_rank <= 80; precheck_feature_mean_l2 <= 4.9334; pool_feature_mean_l2 <= 14.0352; val_count <= 50",
+      "thresholds": {
+        "global_pad_rank_min": 38,
+        "global_pad_rank_max": 80,
+        "precheck_feature_mean_l2_max": 4.9333655834198,
+        "pool_feature_mean_l2_max": 14.035164594650269,
+        "val_count_max": 50,
+        "quantiles": {
+          "global_pad_rank_min": "ceil(Q30(global_pad_rank | audited buildable SMD pairs))",
+          "global_pad_rank_max": "floor(Q70(global_pad_rank | audited buildable SMD pairs))",
+          "precheck_feature_mean_l2_max": "Q30(precheck_feature_mean_l2 | audited buildable SMD pairs)",
+          "pool_feature_mean_l2_max": "Q75(pool_feature_mean_l2 | audited buildable SMD pairs)",
+          "val_count_max": "floor(Q75(val_count | audited buildable SMD pairs))"
+        }
+      },
+      "audit_stats": {
+        "selected_count": 7,
+        "tp": 7,
+        "fp": 0,
+        "total_good": 32,
+        "precision": 1.0,
+        "recall_over_good": 0.21875,
+        "f1": 0.358974358974359,
+        "mean_delta_combined_minus_source_auroc": 0.14376894597223205,
+        "mean_delta_nas_minus_fixed_auroc": 0.09000809510493388
+      },
+      "notes": "Selection uses only build-time proxy quantities: TS-JEPA/PAD rank, precheck domain AUC, and feature-mean L2. Benchmark outcomes are used only to audit the frozen selected set."
+    }
+  },
+  {
+    "protocol_version": 2,
+    "split_mode": "search",
+    "shift_level": "hard",
+    "source_entity": "machine-1-3",
+    "target_entity": "machine-1-7",
+    "same_entity": false,
+    "source_machine": "machine-1-3",
+    "target_machine": "machine-1-7",
+    "same_machine": false,
+    "out_dir": "D:\\Papers\\NAS--for--UAD\\data\\smd_experiments\\cross_entity_all_pad_prefhard\\rank_76__machine-1-3__to__machine-1-7__hard",
+    "train_normal_count": 369,
+    "train_normal_frac": 1.0,
+    "target_pool_count": 73,
+    "target_pool_hidden_anomaly_count": 2,
+    "target_pool_hidden_anomaly_ratio": 0.0273972602739726,
+    "val_count": 47,
+    "val_normal_count": 40,
+    "val_anomaly_count": 7,
+    "test_count": 112,
+    "test_normal_count": 104,
+    "test_anomaly_count": 8,
+    "indices": {
+      "pool_start": 137,
+      "pool_end": 210,
+      "val_start": 210,
+      "val_end": 257,
+      "test_start": 257,
+      "test_end": 369
+    },
+    "domain_shift": {
+      "source_vs_target_pool": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 5.9717631340026855,
+        "feature_std_l2": 12.925626754760742,
+        "n_source_used": 369,
+        "n_target_used": 73
+      },
+      "source_vs_val": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 6.538600921630859,
+        "feature_std_l2": 14.566069602966309,
+        "n_source_used": 369,
+        "n_target_used": 47
+      },
+      "source_vs_test": {
+        "domain_auc": 1.0,
+        "domain_acc": 1.0,
+        "feature_mean_l2": 6.921605587005615,
+        "feature_std_l2": 17.158554077148438,
+        "n_source_used": 369,
+        "n_target_used": 112
+      }
+    },
+    "notes": "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "candidate_pair_shift_precheck": {
+      "pad_value": 1.9344262295081966,
+      "domain_acc": 0.9836065573770492,
+      "domain_auc": 0.9997611084567606,
+      "feature_mean_l2": 3.859745979309082,
+      "n_source_used": 305,
+      "n_target_used": 305
+    },
+    "ranking_rule": "smd_moderate_proxy_paper_safe",
+    "ranking_source": "D:\\Papers\\NAS--for--UAD\\outputs\\benchmarks\\jepa_pad_smd_cross_entity_all\\pilot_rankings.json",
+    "global_pad_rank": 76,
+    "selected_shift_level": "hard",
+    "selection_order": 7,
+    "smd_paper_safe_rule": {
+      "profile": "strict",
+      "rule_name": "smd_moderate_proxy_paper_safe",
+      "rule_text": "buildable cross-entity SMD pair; 38 <= global_pad_rank <= 80; precheck_feature_mean_l2 <= 4.9334; pool_feature_mean_l2 <= 14.0352; val_count <= 50",
+      "thresholds": {
+        "global_pad_rank_min": 38,
+        "global_pad_rank_max": 80,
+        "precheck_feature_mean_l2_max": 4.9333655834198,
+        "pool_feature_mean_l2_max": 14.035164594650269,
+        "val_count_max": 50,
+        "quantiles": {
+          "global_pad_rank_min": "ceil(Q30(global_pad_rank | audited buildable SMD pairs))",
+          "global_pad_rank_max": "floor(Q70(global_pad_rank | audited buildable SMD pairs))",
+          "precheck_feature_mean_l2_max": "Q30(precheck_feature_mean_l2 | audited buildable SMD pairs)",
+          "pool_feature_mean_l2_max": "Q75(pool_feature_mean_l2 | audited buildable SMD pairs)",
+          "val_count_max": "floor(Q75(val_count | audited buildable SMD pairs))"
+        }
+      },
+      "audit_stats": {
+        "selected_count": 7,
+        "tp": 7,
+        "fp": 0,
+        "total_good": 32,
+        "precision": 1.0,
+        "recall_over_good": 0.21875,
+        "f1": 0.358974358974359,
+        "mean_delta_combined_minus_source_auroc": 0.14376894597223205,
+        "mean_delta_nas_minus_fixed_auroc": 0.09000809510493388
+      },
+      "notes": "Selection uses only build-time proxy quantities: TS-JEPA/PAD rank, precheck domain AUC, and feature-mean L2. Benchmark outcomes are used only to audit the frozen selected set."
+    }
+  }
+]
