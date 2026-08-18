@@ -1,129 +1,103 @@
 HƯỚNG DẪN CÀI ĐẶT
-=================
+==================
 
-1. Công cụ và môi trường khuyến nghị
-------------------------------------
+1. Yêu cầu
+-----------
 - Hệ điều hành: Windows 10/11, Linux hoặc macOS.
-- Terminal khuyến nghị trên Windows: PowerShell.
-- Git để clone source code từ GitHub.
-- Python: khuyến nghị Python 3.10 đến 3.12.
-- GPU NVIDIA/CUDA: khuyến nghị để chạy full experiment. Nếu không có GPU, vẫn có thể đổi `--device cuda` thành `--device cpu`, nhưng thời gian chạy sẽ lâu hơn đáng kể.
+- Python 3.12 (khuyến nghị đúng phiên bản 3.12 để khớp môi trường thí nghiệm).
+- Git và ít nhất 10 GB dung lượng trống cho môi trường Python, dữ liệu và kết quả.
+- GPU NVIDIA được khuyến nghị cho thí nghiệm đầy đủ. Có thể chạy CPU nhưng sẽ rất lâu.
 
-2. Lấy source code
+Repo đã chứa sẵn 28 cặp dữ liệu tiền xử lý dùng trong Chapter 4:
+- SMD: 12 cặp.
+- MSL: 6 cặp.
+- SMAP: 10 cặp.
+
+Không cần tải raw dataset và không cần chạy lại bước tiền xử lý hoặc chọn cặp.
+
+2. Tải source code
 ------------------
-Clone repository:
+Nếu dùng Git:
 
-git clone <URL_GITHUB_CUA_BAN>
+git clone https://github.com/tmthu1204/NAS--for--UAD.git
 cd NAS--for--UAD
 
-Nếu nhận source dưới dạng file nén, giải nén và mở terminal tại thư mục gốc có các file/thư mục sau:
+Nếu tải trực tiếp file ZIP, dùng đường dẫn:
 
-README.md
+https://github.com/tmthu1204/NAS--for--UAD/archive/refs/heads/main.zip
+
+Giải nén rồi mở terminal tại thư mục NAS--for--UAD-main có các file:
+
 requirements.txt
-setup.py
+run_chapter4.py
 src/
 scripts/
-HuongDanCaiDat.txt
-HuongDanSuDung.txt
+data/chapter4/
+reference_results/chapter4/
 
 3. Tạo môi trường ảo
 --------------------
 Windows PowerShell:
 
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
 
 Linux/macOS:
 
-python3 -m venv venv
-source venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate
 
-Nếu PowerShell không cho activate môi trường ảo, chạy một lần:
+Nếu PowerShell chặn lệnh activate, chạy một lần:
 
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
-Sau đó đóng/mở lại PowerShell và activate lại môi trường ảo.
+Sau đó mở lại PowerShell và activate môi trường.
 
-4. Bật UTF-8 trên Windows
--------------------------
-Các file hướng dẫn và một số thông báo có tiếng Việt có dấu. Trên Windows nên bật UTF-8 trước khi chạy:
+4. Cài thư viện
+---------------
+Nâng cấp công cụ cài đặt:
 
-$env:PYTHONUTF8='1'
-chcp 65001
+python -m pip install --upgrade pip setuptools wheel
 
-5. Cài đặt thư viện
--------------------
-Sau khi activate môi trường ảo, chạy:
+Máy CPU:
 
-python -m pip install --upgrade pip
+python -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
 
-Nếu dùng GPU NVIDIA và cần cài lại PyTorch bản CUDA phù hợp với máy, có thể cài theo trang chính thức của PyTorch. Ví dụ với CUDA 11.8:
+Máy có GPU NVIDIA, dùng bản CUDA 11.8 giống môi trường thí nghiệm:
 
-python -m pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+python -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu118
+python -m pip install -r requirements.txt
 
-Nếu chỉ chạy CPU, thông thường cài `requirements.txt` là đủ.
+Nếu máy dùng phiên bản CUDA khác, chọn lệnh PyTorch phù hợp trên trang chính thức
+https://pytorch.org/get-started/locally/ nhưng vẫn giữ PyTorch 2.7.1 nếu có thể.
 
-6. Kiểm tra cài đặt
--------------------
-Chạy các lệnh sau:
+5. Kiểm tra cài đặt và dữ liệu
+-----------------------------
+Chạy:
 
-python -c "import torch, numpy, sklearn, pandas, scipy; print('torch=', torch.__version__); print('cuda=', torch.cuda.is_available())"
-python -m src.pipeline --help
+python run_chapter4.py --check-only
 
-Nếu lệnh `--help` hiển thị danh sách tham số, môi trường đã sẵn sàng.
-Nếu gặp lỗi `ModuleNotFoundError: No module named 'numpy'`, nghĩa là chưa activate đúng môi trường ảo hoặc chưa cài `requirements.txt`.
+Kết quả hợp lệ phải kết thúc bằng:
 
-7. Chuẩn bị dữ liệu
--------------------
-Dữ liệu raw và dữ liệu đã tiền xử lý KHÔNG đưa lên GitHub vì dung lượng lớn. Người chạy đặt dữ liệu vào các thư mục sau.
+Environment and Chapter 4 data check: OK
 
-SMD:
+Lệnh này kiểm tra phiên bản Python, dependency, ba manifest và mở thử toàn bộ
+112 file NPZ của 28 cặp để phát hiện file thiếu hoặc hỏng.
 
-data/ServerMachineDataset/
-  train/
-  test/
-  test_label/
+6. Kiểm tra chạy nhanh
+----------------------
+Chạy một cặp SMD với cấu hình rút gọn trên CPU:
 
-Hoặc:
+python run_chapter4.py --dataset smd --device cpu --quick
 
-data/ServerMachineDataset/
-  train/
-  test/
-  labels/
+Chế độ --quick chỉ dùng để kiểm tra luồng chương trình, KHÔNG tạo kết quả trong
+luận văn. Cách chạy thí nghiệm đầy đủ nằm trong HuongDanSuDung.txt.
 
-HAI 21.03:
-
-external/hai/hai-21.03/
-  train*.csv hoặc train*.csv.gz
-  test*.csv hoặc test*.csv.gz
-
-Có thể đặt ở `data/hai_raw/` hoặc `external/hai/`; script sẽ tự dò layout phổ biến.
-
-Exathlon:
-
-external/exathlon/data/
-  ground_truth.csv
-  raw/
-    app*/
-      *.csv hoặc *.zip
-
-Hoặc đặt ở `data/exathlon_raw/`, miễn là có `ground_truth.csv`/`ground_truth.zip` và các thư mục `app*`.
-
-8. Thư mục sinh ra khi chạy
----------------------------
-Các thư mục sau do chương trình tạo ra:
-
-data/
-external/
-outputs/
-results/
-runs/
-tmp/
-tmp_smoke/
-tmp_rule_tryouts/
-venv/
-.venv/
-__pycache__/
-
-Nếu muốn chạy lại từ đầu, có thể xóa các thư mục output/cache này sau khi đã sao lưu kết quả cần thiết.
+7. Lỗi thường gặp
+-----------------
+- Python 3.13/3.14: tạo lại môi trường bằng Python 3.12.
+- ModuleNotFoundError: activate đúng .venv rồi cài lại requirements.txt.
+- CUDA unavailable: chạy --device cpu hoặc cài đúng PyTorch CUDA và driver NVIDIA.
+- Thiếu data/chapter4: tải lại repo đầy đủ; không dùng tùy chọn tải bỏ qua file lớn.
+- PowerShell hiển thị sai tiếng Việt: chạy chcp 65001 trước khi đọc file hướng dẫn.

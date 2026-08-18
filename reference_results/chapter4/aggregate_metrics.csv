@@ -1,0 +1,10 @@
+dataset,method,ap,auroc,best_f1,event_f1
+SMD,source_only,0.5033,0.6079,0.5214,0.4173
+SMD,best_fixed_per_pair,0.4199,0.6224,0.4576,0.4253
+SMD,nas_top_k,0.5012,0.7000,0.5226,0.4754
+MSL,source_only,0.2065,0.3047,0.3589,0.1852
+MSL,best_fixed_per_pair,0.1983,0.2610,0.3600,0.3846
+MSL,nas_top_k,0.2261,0.3704,0.3837,0.2143
+SMAP,source_only,0.1433,0.5279,0.2809,0.1000
+SMAP,best_fixed_per_pair,0.1437,0.4300,0.2682,0.4800
+SMAP,nas_top_k,0.2201,0.6829,0.3578,0.9286

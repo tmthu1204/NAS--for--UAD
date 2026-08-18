@@ -1,0 +1,71 @@
+{
+    "protocol_version":  2,
+    "split_mode":  "search",
+    "shift_level":  "medium",
+    "source_entity":  "machine-2-5",
+    "target_entity":  "machine-3-10",
+    "same_entity":  false,
+    "source_machine":  "machine-2-5",
+    "target_machine":  "machine-3-10",
+    "same_machine":  false,
+    "out_dir":  "data/chapter4/smd/machine-2-5__to__machine-3-10",
+    "train_normal_count":  369,
+    "train_normal_frac":  1.0,
+    "target_pool_count":  73,
+    "target_pool_hidden_anomaly_count":  4,
+    "target_pool_hidden_anomaly_ratio":  0.0547945205479452,
+    "val_count":  67,
+    "val_normal_count":  52,
+    "val_anomaly_count":  15,
+    "test_count":  158,
+    "test_normal_count":  142,
+    "test_anomaly_count":  16,
+    "indices":  {
+                    "pool_start":  71,
+                    "pool_end":  144,
+                    "val_start":  144,
+                    "val_end":  211,
+                    "test_start":  211,
+                    "test_end":  369
+                },
+    "domain_shift":  {
+                         "source_vs_target_pool":  {
+                                                       "domain_auc":  1.0,
+                                                       "domain_acc":  1.0,
+                                                       "feature_mean_l2":  8.1414213180542,
+                                                       "feature_std_l2":  24.4162654876709,
+                                                       "n_source_used":  369,
+                                                       "n_target_used":  73
+                                                   },
+                         "source_vs_val":  {
+                                               "domain_auc":  1.0,
+                                               "domain_acc":  1.0,
+                                               "feature_mean_l2":  6.77054500579834,
+                                               "feature_std_l2":  20.55393409729004,
+                                               "n_source_used":  369,
+                                               "n_target_used":  67
+                                           },
+                         "source_vs_test":  {
+                                                "domain_auc":  1.0,
+                                                "domain_acc":  1.0,
+                                                "feature_mean_l2":  15.867520332336426,
+                                                "feature_std_l2":  22.79564666748047,
+                                                "n_source_used":  369,
+                                                "n_target_used":  158
+                                            }
+                     },
+    "notes":  "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity.",
+    "candidate_pair_shift_precheck":  {
+                                          "pad_value":  1.9381443298969074,
+                                          "domain_acc":  0.9845360824742269,
+                                          "domain_auc":  0.9997874375597832,
+                                          "feature_mean_l2":  4.9835686683654785,
+                                          "n_source_used":  323,
+                                          "n_target_used":  323
+                                      },
+    "ranking_rule":  "cross_entity_all_pad_prefhard",
+    "ranking_source":  "reference_results/chapter4/pair_auroc.csv",
+    "global_pad_rank":  70,
+    "selected_shift_level":  "medium",
+    "selection_order":  60
+}

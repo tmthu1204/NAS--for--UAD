@@ -1,220 +1,114 @@
 HƯỚNG DẪN SỬ DỤNG
 =================
 
-1. Kiểm tra source
-------------------
-Dự án viết bằng Python nên không cần biên dịch như C/C++/Java. Để kiểm tra nhanh lỗi cú pháp, chạy:
+1. Mục đích
+-----------
+Repo tái lập các thí nghiệm chính trong Chapter 4 trên ba bộ dữ liệu:
+- SMD: 12 cặp nguồn-đích.
+- MSL: 6 cặp nguồn-đích.
+- SMAP: 10 cặp nguồn-đích.
 
-python -m py_compile src/pipeline.py scripts/preprocess_smd.py scripts/preprocess_hai.py scripts/preprocess_exathlon.py scripts/pilot_rank_jepa_pad_cached.py scripts/build_pair_rule_common.py scripts/build_domain_shift_smd.py scripts/build_domain_shift_hai.py scripts/build_domain_shift_exathlon.py scripts/run_domain_shift_case_matrix.py scripts/run_manifest_benchmarks.py
+Cấu hình đầy đủ được cố định theo luận văn:
+- Seed: 42.
+- Tiền huấn luyện TS-TCC: 10 epoch.
+- Tìm kiếm NAS: evolutionary_guided, 3 vòng, 5 ứng viên mỗi vòng.
+- Xếp hạng lại: NAS top-5.
+- Khối one-class: DeepSVDD, 10 epoch khi tính trọng số và 20 epoch ở bước cuối.
+- Hai chế độ: huấn luyện thuần nguồn và NAS-ADE thích nghi kết hợp.
 
-Để xem tham số pipeline chính:
+2. Kiểm tra trước khi chạy
+-------------------------
+Activate môi trường rồi chạy:
 
-python -m src.pipeline --help
+python run_chapter4.py --check-only
 
-2. Quy ước thí nghiệm chính
----------------------------
-Các lệnh dưới đây dùng cấu hình full experiment để lấy kết quả chính, không phải smoke-test:
+Nếu cần kiểm tra nhanh toàn bộ luồng trên một cặp:
 
-- Dataset: SMD, HAI, Exathlon.
-- Mode chạy tự động trong benchmark: `uad_source` và `adaptnas_combined`.
-- One-class learning backend: `deepsvdd`, `gmm_head`, `lof_head`.
-- NAS strategy: `evolutionary_guided`.
-- Rule chọn pair:
-  SMD và HAI dùng `cross_entity_paper_safe`.
-  Exathlon dùng `cross_entity_same_app_stable_adaptation_window`.
+python run_chapter4.py --dataset smd --device cpu --quick
 
-Nếu máy không có GPU, thay toàn bộ `--device cuda` thành `--device cpu`.
+Không dùng kết quả --quick để so sánh với luận văn.
 
-3. Tiền xử lý dữ liệu
----------------------
-SMD:
+3. Chạy đầy đủ Chapter 4
+------------------------
+Tự chọn GPU nếu khả dụng, nếu không thì dùng CPU:
 
-python scripts/preprocess_smd.py --raw_root data/ServerMachineDataset --out_root data/smd --window 128 --stride 64
+python run_chapter4.py
 
-HAI 21.03:
+Chỉ định GPU NVIDIA:
 
-python scripts/preprocess_hai.py --raw_root external/hai --version 21.03 --out_root data/hai --window 128 --stride 64
+python run_chapter4.py --device cuda
 
-Exathlon:
+Chỉ định CPU:
 
-python scripts/preprocess_exathlon.py --raw_root external/exathlon --out_root data/exathlon --window 128 --stride 64 --scale_on normal_rows
+python run_chapter4.py --device cpu
 
-4. Chọn source-target pairs bằng best explainable rule
-------------------------------------------------------
-SMD cần bước ranking PAD trước khi build manifest:
+Chạy riêng từng bộ dữ liệu:
 
-python scripts/pilot_rank_jepa_pad_cached.py `
-  --data_root data/smd `
-  --dataset_name smd_cross_entity_all `
-  --pair_scope cross_entity_all `
-  --out_dir outputs/benchmarks/jepa_pad_smd_cross_entity_all `
-  --device cuda `
-  --epochs 10 `
-  --topk 100
+python run_chapter4.py --dataset smd --device cuda
+python run_chapter4.py --dataset msl --device cuda
+python run_chapter4.py --dataset smap --device cuda
 
-Sau đó build manifest SMD theo rule `cross_entity_paper_safe`:
+Thí nghiệm đầy đủ gồm 28 cặp và nhiều ứng viên kiến trúc nên có thể mất nhiều giờ.
+Nên cắm nguồn, tắt chế độ sleep và bảo đảm còn đủ dung lượng ổ đĩa.
 
-python scripts/build_domain_shift_smd.py `
-  --data_root data/smd `
-  --out_root data/smd_experiments `
-  --pair_rule cross_entity_paper_safe `
-  --rankings_json outputs/benchmarks/jepa_pad_smd_cross_entity_all/pilot_rankings.json `
-  --global_topk 3 `
-  --seed 42
+4. Tiếp tục hoặc chạy lại
+-------------------------
+Nếu quá trình bị dừng, chạy lại đúng lệnh cũ. Chương trình giữ các kết quả hoàn
+chỉnh đã có và tiếp tục các trường hợp còn thiếu.
 
-HAI cũng cần ranking PAD trước khi build manifest:
+Muốn bắt buộc chạy lại toàn bộ kết quả đã tồn tại:
 
-python scripts/pilot_rank_jepa_pad_cached.py `
-  --data_root data/hai `
-  --dataset_name hai_cross_entity_all `
-  --pair_scope cross_entity_all `
-  --out_dir outputs/benchmarks/jepa_pad_hai_cross_entity_all `
-  --device cuda `
-  --epochs 10 `
-  --topk 100
+python run_chapter4.py --device cuda --force
 
-Sau đó build manifest HAI theo rule `cross_entity_paper_safe`:
+5. Vị trí kết quả
+-----------------
+Kết quả được tạo tại:
 
-python scripts/build_domain_shift_hai.py `
-  --data_root data/hai `
-  --out_root data/hai_experiments `
-  --pair_rule cross_entity_paper_safe `
-  --rankings_json outputs/benchmarks/jepa_pad_hai_cross_entity_all/pilot_rankings.json `
-  --global_topk 3 `
-  --seed 42
+outputs/chapter4/chapter4_smd/
+outputs/chapter4/chapter4_msl/
+outputs/chapter4/chapter4_smap/
 
-Exathlon dùng stable adaptation-window rule, không cần truyền ranking JSON:
+Trong mỗi thư mục, hai file tổng hợp quan trọng nhất là:
 
-python scripts/build_domain_shift_exathlon.py `
-  --data_root data/exathlon `
-  --out_root data/exathlon_experiments `
-  --pair_rule cross_entity_same_app_stable_adaptation_window `
-  --seed 42
+REPORT.md
+summary.json
 
-Các manifest chính sau khi build:
+Mỗi cặp có thư mục riêng, ví dụ:
 
-data/smd_experiments/cross_entity_paper_safe/manifest.json
-data/hai_experiments/cross_entity_paper_safe/manifest.json
-data/exathlon_experiments/cross_entity_same_app_stable_adaptation_window/manifest.json
+outputs/chapter4/chapter4_smd/machine-1-4__to__machine-2-4/
 
-5. Chạy full benchmark cho 2 mode và 3 one-class backends
----------------------------------------------------------
-Đặt cấu hình chung trong PowerShell:
+REPORT.md báo cáo các nhóm:
+- uad_source: huấn luyện thuần nguồn.
+- combined: chế độ NAS-ADE thích nghi kết hợp.
+- best_NAS: ứng viên tốt nhất trong nhóm NAS top-k theo tập thẩm định.
+- best_fixed: GRU, Transformer hoặc TCN tốt nhất theo tập thẩm định.
 
-$COMMON = @(
-  "--output_root", "outputs/benchmarks/main_rule_oneclass_plugin_sweep_gpu",
-  "--device", "cuda",
-  "--seed", "42",
-  "--epochs_pretrain", "10",
-  "--search_candidates", "5",
-  "--nas_search_iters", "3",
-  "--nas_search_strategy", "evolutionary_guided",
-  "--combined_nas_topk_rerank", "5",
-  "--batch_size", "64",
-  "--oneclass_epochs", "10",
-  "--oneclass_final_epochs", "20",
-  "--oneclass_batch_size", "1024",
-  "--oneclass_max_fit", "5000"
-)
+Các chỉ số chính gồm AP, AUROC, Best F1 và Event-F1.
 
-Chạy SMD:
-
-foreach ($oc in @("deepsvdd", "gmm_head", "lof_head")) {
-  python scripts/run_manifest_benchmarks.py `
-    --manifest data/smd_experiments/cross_entity_paper_safe/manifest.json `
-    --dataset_name "smd_paper_safe_${oc}_gpu" `
-    @COMMON `
-    --oneclass_method $oc `
-    --weighting_oneclass_method $oc `
-    --final_oneclass_method $oc
-}
-
-Chạy HAI:
-
-foreach ($oc in @("deepsvdd", "gmm_head", "lof_head")) {
-  python scripts/run_manifest_benchmarks.py `
-    --manifest data/hai_experiments/cross_entity_paper_safe/manifest.json `
-    --dataset_name "hai_paper_safe_${oc}_gpu" `
-    @COMMON `
-    --oneclass_method $oc `
-    --weighting_oneclass_method $oc `
-    --final_oneclass_method $oc
-}
-
-Chạy Exathlon:
-
-foreach ($oc in @("deepsvdd", "gmm_head", "lof_head")) {
-  python scripts/run_manifest_benchmarks.py `
-    --manifest data/exathlon_experiments/cross_entity_same_app_stable_adaptation_window/manifest.json `
-    --dataset_name "exathlon_same_app_stable_adaptation_window_${oc}_gpu" `
-    @COMMON `
-    --oneclass_method $oc `
-    --weighting_oneclass_method $oc `
-    --final_oneclass_method $oc
-}
-
-Mỗi lệnh `run_manifest_benchmarks.py` tự chạy đúng hai mode `uad_source` và `adaptnas_combined`, đồng thời sinh báo cáo so sánh fixed baselines và NAS baselines.
-
-Kết quả nằm trong:
-
-outputs/benchmarks/main_rule_oneclass_plugin_sweep_gpu/<dataset_name>/
-  summary.json
-  REPORT.md
-  <source_entity>__to__<target_entity>/
-
-Nếu muốn chạy lại dù thư mục kết quả đã tồn tại, thêm `--force_run` vào cuối lệnh benchmark.
-
-6. Thí nghiệm NAS trên paper frameworks
+6. Đối chiếu với kết quả trong luận văn
 ---------------------------------------
-Trong phạm vi dataset SMD/HAI/Exathlon, repo hiện có paper-style NAS cho raw SMD với `OmniAnomaly` và `TranAD`. `USAD` trong repo là đường SWaT source-only nên không nằm trong gói HAI/SMD/Exathlon này.
+Giá trị đã báo cáo trong Chapter 4 nằm tại:
 
-Chạy OmniAnomaly partial NAS trên các máy SMD xuất hiện trong rule chính:
+reference_results/chapter4/aggregate_metrics.csv
+reference_results/chapter4/pair_auroc.csv
 
-$SMD_MACHINES = @("machine-1-1", "machine-1-4", "machine-1-8", "machine-2-4")
-New-Item -ItemType Directory -Force outputs/benchmarks/paper_framework_nas_smd | Out-Null
+aggregate_metrics.csv chứa trung bình theo bộ dữ liệu. pair_auroc.csv chứa AUROC
+chi tiết của 28 cặp. Do GPU, CUDA/cuDNN và hệ điều hành có thể khác nhau, kết quả
+chạy lại có thể lệch nhẹ dù cùng seed 42; danh sách cặp và cấu hình vẫn cố định.
 
-foreach ($m in $SMD_MACHINES) {
-  python -m src.pipeline `
-    --mode uad_source `
-    --family omni_anomaly `
-    --raw_smd_root data/ServerMachineDataset `
-    --machine $m `
-    --search_candidates 20 `
-    --omni_search_iters 3 `
-    --omni_epochs 20 `
-    --omni_final_epochs 20 `
-    --device cuda
-  Copy-Item outputs/results.json "outputs/benchmarks/paper_framework_nas_smd/omni_anomaly_${m}.json" -Force
-}
+7. Dữ liệu đi kèm
+-----------------
+Ba manifest được runner dùng trực tiếp:
 
-Chạy TranAD partial NAS trên cùng nhóm máy SMD:
+data/chapter4/smd/manifest.json
+data/chapter4/msl/manifest.json
+data/chapter4/smap/manifest.json
 
-foreach ($m in $SMD_MACHINES) {
-  python -m src.pipeline `
-    --mode uad_source `
-    --family tranad `
-    --raw_smd_root data/ServerMachineDataset `
-    --machine $m `
-    --search_candidates 5 `
-    --tranad_search_iters 2 `
-    --tranad_epochs 5 `
-    --tranad_final_epochs 5 `
-    --device cuda
-  Copy-Item outputs/results.json "outputs/benchmarks/paper_framework_nas_smd/tranad_${m}.json" -Force
-}
+Mỗi cặp chỉ gồm dữ liệu tiền xử lý cần cho thí nghiệm: train_normal,
+target_pool_unlabeled, val_mixed, test_mixed và split_metadata. Không cần tải hoặc
+giải nén raw SMD/MSL/SMAP.
 
-7. Cách đọc kết quả
--------------------
-Ưu tiên đọc các file:
-
-outputs/benchmarks/main_rule_oneclass_plugin_sweep_gpu/<dataset_name>/REPORT.md
-outputs/benchmarks/main_rule_oneclass_plugin_sweep_gpu/<dataset_name>/summary.json
-
-Trong `REPORT.md`, các cột quan trọng là:
-
-- `uad_source`: kết quả mode source-only.
-- `combined`: kết quả mode `adaptnas_combined`.
-- `best_NAS`: kiến trúc NAS tốt nhất trong nhóm ứng viên.
-- `best_fixed`: baseline kiến trúc cố định tốt nhất.
-- `d_combined-source AUROC`: chênh lệch AUROC giữa combined và source-only.
-- `d_bestNAS-fixed AUROC`: chênh lệch AUROC giữa NAS và fixed baseline.
+8. Dọn kết quả sinh ra
+----------------------
+Thư mục outputs/ không được Git theo dõi. Sau khi đã sao lưu kết quả cần thiết,
+có thể xóa outputs/chapter4/ để giải phóng dung lượng rồi chạy lại từ đầu.

@@ -1,0 +1,58 @@
+{
+    "protocol_version":  2,
+    "split_mode":  "search",
+    "shift_level":  "auto",
+    "source_entity":  "E-11",
+    "target_entity":  "E-9",
+    "same_entity":  false,
+    "source_machine":  "E-11",
+    "target_machine":  "E-9",
+    "same_machine":  false,
+    "out_dir":  "data/chapter4/smap/E-11__to__E-9",
+    "train_normal_count":  44,
+    "train_normal_frac":  1.0,
+    "target_pool_count":  12,
+    "target_pool_hidden_anomaly_count":  0,
+    "target_pool_hidden_anomaly_ratio":  0.0,
+    "val_count":  9,
+    "val_normal_count":  5,
+    "val_anomaly_count":  4,
+    "test_count":  39,
+    "test_normal_count":  35,
+    "test_anomaly_count":  4,
+    "indices":  {
+                    "pool_start":  68,
+                    "pool_end":  80,
+                    "val_start":  80,
+                    "val_end":  89,
+                    "test_start":  89,
+                    "test_end":  128
+                },
+    "domain_shift":  {
+                         "source_vs_target_pool":  {
+                                                       "domain_auc":  1.0,
+                                                       "domain_acc":  1.0,
+                                                       "feature_mean_l2":  7.716583728790283,
+                                                       "feature_std_l2":  23.696138381958008,
+                                                       "n_source_used":  44,
+                                                       "n_target_used":  12
+                                                   },
+                         "source_vs_val":  {
+                                               "domain_auc":  0.6666666666666666,
+                                               "domain_acc":  0.9375,
+                                               "feature_mean_l2":  54927000.0,
+                                               "feature_std_l2":  102759008.0,
+                                               "n_source_used":  44,
+                                               "n_target_used":  9
+                                           },
+                         "source_vs_test":  {
+                                                "domain_auc":  1.0,
+                                                "domain_acc":  1.0,
+                                                "feature_mean_l2":  19.173194885253906,
+                                                "feature_std_l2":  24.391067504882812,
+                                                "n_source_used":  44,
+                                                "n_target_used":  39
+                                            }
+                     },
+    "notes":  "No synthetic data was created. train_normal comes from source.npz of the source entity, while target_pool/val/test are contiguous windows from target.npz of the target entity."
+}

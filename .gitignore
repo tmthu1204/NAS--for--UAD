@@ -1,29 +1,46 @@
+# Python caches and environments
 __pycache__/
-**/__pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 *.pyd
 *.so
 *.egg-info/
-dist/
 build/
+dist/
 .venv/
-env/
 venv/
-.ipynb_checkpoints/
+env/
 
-# Local-only large data, generated splits, model outputs, and experiment caches.
-/data/
+# Test, notebook, and editor caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# Local agent and planning state
+.agents/
+.codex/
+.planning/
+
+# Only the preprocessed Chapter 4 benchmark pairs belong in Git.
+/data/*
+!/data/chapter4/
+!/data/chapter4/**
 /external/
+
+# Generated experiment artifacts
 /outputs/
 /results/
 /runs/
 /tmp/
-/tmp_smoke/
-/tmp_rule_tryouts/
+/tmp_*/
+/.tmp/
+*.log
+*.pid
+*.pid.txt
 
-# Local agent/planning state and thesis drafting files are not needed to run code.
-/.agents/
-/.codex/
-/.planning/
+# Thesis drafts and operating-system files
 /thesis/
+Thumbs.db
+.DS_Store

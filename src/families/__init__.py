@@ -18,6 +18,15 @@ from .usad import (
     train_usad_source,
     validate_usad_on_series,
 )
+from .dagmm import (
+    DagmmArchConfig,
+    DagmmModel,
+    get_fixed_paper_dagmm_arch,
+    sample_dagmm_arch,
+    score_dagmm_series,
+    train_dagmm_source,
+    validate_dagmm_on_series,
+)
 from .tranad import (
     TranADArchConfig,
     TranADModel,
@@ -43,6 +52,13 @@ __all__ = [
     "score_usad_series",
     "train_usad_source",
     "validate_usad_on_series",
+    "DagmmArchConfig",
+    "DagmmModel",
+    "get_fixed_paper_dagmm_arch",
+    "sample_dagmm_arch",
+    "score_dagmm_series",
+    "train_dagmm_source",
+    "validate_dagmm_on_series",
     "TranADArchConfig",
     "TranADModel",
     "get_fixed_paper_tranad_arch",

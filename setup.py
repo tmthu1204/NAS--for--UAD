@@ -1,20 +1,19 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
+
 
 setup(
-    name="adapt_ts_project",
-    version="0.1.0",
-    description="Combination of TS-TCC and AdaptNAS for time-series anomaly detection",
-    author="Your Name",
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    name="nas-ade-uad",
+    version="1.0.0",
+    description="NAS-ADE experiments for unsupervised time-series anomaly detection",
+    packages=find_packages(include=("src", "src.*")),
     install_requires=[
-        "torch>=1.12.0",
-        "torchvision",
-        "numpy",
-        "scikit-learn",
-        "matplotlib",
-        "pandas",
-        "einops",
+        "torch==2.7.1",
+        "numpy==2.4.3",
+        "scikit-learn==1.8.0",
+        "matplotlib==3.10.8",
+        "pandas==3.0.1",
+        "scipy==1.17.1",
+        "einops==0.8.1",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10,<3.13",
 )
